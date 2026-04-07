@@ -1,0 +1,19 @@
+{
+  "name": "leaflet-cli",
+  "version": "1.0.0",
+  "description": "CLI tool for Leaflet URL shortener",
+  "main": "index.js",
+  "bin": {
+    "leaflet-cli": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "commander": "^11.1.0",
+    "node-fetch": "^2.7.0",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "dotenv": "^16.3.1"
+  }
+}
