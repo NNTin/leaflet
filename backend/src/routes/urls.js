@@ -12,7 +12,7 @@ const HOURS_PER_DAY = 24;
 
 const TTL_MAP = {
   '5m': 5 * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  '60m': MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
+  '1h': MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
   '24h': HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
   'never': null,
 };
@@ -22,12 +22,12 @@ router.post(
   '/shorten',
   [
     body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
-    body('ttl').isIn(['5m', '60m', '24h', 'never']).withMessage('TTL must be one of: 5m, 60m, 24h, never'),
+    body('ttl').isIn(['5m', '1h', '24h', 'never']).withMessage('TTL must be one of: 5m, 1h, 24h, never'),
     body('alias')
       .optional()
-      .isAlphanumeric()
+      .matches(/^[a-zA-Z0-9-_]+$/)
       .isLength({ min: 3, max: 50 })
-      .withMessage('Alias must be 3-50 alphanumeric characters'),
+      .withMessage('Alias must be 3-50 characters (letters, numbers, hyphens, underscores)'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
