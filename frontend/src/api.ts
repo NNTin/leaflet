@@ -5,21 +5,20 @@ const api = axios.create({
   withCredentials: true,
 })
 
-let csrfToken = null
+let csrfToken: string | null = null
 
-async function fetchCsrfToken() {
+async function fetchCsrfToken(): Promise<void> {
   try {
-    const res = await axios.get('/auth/csrf-token', { withCredentials: true })
-    csrfToken = res.data?.csrfToken || res.data?.token || null
+    const res = await axios.get<{ csrfToken?: string; token?: string }>('/auth/csrf-token', { withCredentials: true })
+    csrfToken = res.data?.csrfToken ?? res.data?.token ?? null
   } catch {
     csrfToken = null
   }
 }
 
-// Attach CSRF token to mutating requests
 api.interceptors.request.use(async (config) => {
   const mutating = ['post', 'put', 'patch', 'delete']
-  if (mutating.includes(config.method?.toLowerCase())) {
+  if (mutating.includes(config.method?.toLowerCase() ?? '')) {
     if (!csrfToken) {
       await fetchCsrfToken()
     }
@@ -30,11 +29,10 @@ api.interceptors.request.use(async (config) => {
   return config
 })
 
-// If a 403 is returned, the CSRF token may have rotated — reset it
 api.interceptors.response.use(
   (res) => res,
-  async (err) => {
-    if (err.response?.status === 403 && csrfToken) {
+  async (err: unknown) => {
+    if (axios.isAxiosError(err) && err.response?.status === 403 && csrfToken) {
       csrfToken = null
     }
     return Promise.reject(err)

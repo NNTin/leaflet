@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 
-'use strict';
+import 'dotenv/config';
+import { program } from 'commander';
+import fetch from 'node-fetch';
+import chalk from 'chalk';
+import ora from 'ora';
 
-require('dotenv').config();
-
-const { program } = require('commander');
-const fetch = require('node-fetch');
-const chalk = require('chalk');
-const ora = require('ora');
-
-const DEFAULT_SERVER = process.env.LEAFLET_SERVER || 'http://localhost:3001';
-const DEFAULT_API_KEY = process.env.LEAFLET_API_KEY || '';
+const DEFAULT_SERVER = process.env.LEAFLET_SERVER ?? 'http://localhost:3001';
+const DEFAULT_API_KEY = process.env.LEAFLET_API_KEY ?? '';
 
 program
   .name('leaflet-cli')
@@ -24,7 +21,7 @@ program
   .option('--alias <alias>', 'Custom alias for the short URL (requires privileged/admin API key)')
   .option('--api-key <key>', 'API key for authentication (get from /auth/api-key after OAuth login)', DEFAULT_API_KEY)
   .option('--server <url>', 'Leaflet server URL', DEFAULT_SERVER)
-  .action(async (url, options) => {
+  .action(async (url: string, options: { ttl: string; alias?: string; apiKey: string; server: string }) => {
     const { ttl, alias, server } = options;
     const apiKey = options.apiKey;
 
@@ -37,10 +34,10 @@ program
     const spinner = ora('Creating short URL...').start();
 
     try {
-      const body = { url, ttl };
+      const body: Record<string, string> = { url, ttl };
       if (alias) body.alias = alias;
 
-      const headers = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
       if (apiKey) {
         // API key auth: send as Bearer token. CSRF does not apply to Bearer-authenticated requests.
@@ -50,8 +47,8 @@ program
         try {
           const csrfRes = await fetch(`${server}/auth/csrf-token`);
           if (csrfRes.ok) {
-            const { csrfToken } = await csrfRes.json();
-            if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+            const csrfData = await csrfRes.json() as { csrfToken?: string };
+            if (csrfData.csrfToken) headers['X-CSRF-Token'] = csrfData.csrfToken;
           }
         } catch {
           // CSRF token fetch failed; proceed without it (server may be lenient in dev)
@@ -64,18 +61,24 @@ program
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
+      const data = await response.json() as {
+        shortUrl?: string;
+        shortCode?: string;
+        expiresAt?: string | null;
+        error?: string;
+        errors?: Array<{ msg: string }>;
+      };
 
       if (!response.ok) {
         spinner.fail(chalk.red('Failed to create short URL'));
-        const msg = data.error || (data.errors && data.errors.map(e => e.msg).join(', ')) || response.statusText;
+        const msg = data.error ?? (data.errors?.map(e => e.msg).join(', ')) ?? response.statusText;
         console.error(chalk.red(`✗ Error: ${msg}`));
         process.exit(1);
       }
 
       spinner.succeed(chalk.green('Short URL created!'));
 
-      const shortUrl = data.shortUrl || `${server}/s/${data.shortCode}`;
+      const shortUrl = data.shortUrl ?? `${server}/s/${data.shortCode}`;
       const expiresAt = data.expiresAt;
 
       console.log('');
@@ -84,9 +87,9 @@ program
       if (expiresAt) {
         const expiry = new Date(expiresAt);
         const now = new Date();
-        const diffMs = expiry - now;
+        const diffMs = expiry.getTime() - now.getTime();
         const diffMins = Math.round(diffMs / 60000);
-        let expiryLabel;
+        let expiryLabel: string;
         if (diffMins < 60) {
           expiryLabel = `in ${diffMins} minute${diffMins !== 1 ? 's' : ''}`;
         } else if (diffMins < 1440) {
@@ -100,15 +103,15 @@ program
       } else if (ttl === 'never') {
         console.log(`${chalk.bold('Expires:')}    never`);
       } else {
-        const labelMap = { '5m': '5 minutes', '1h': '1 hour', '24h': '24 hours' };
-        console.log(`${chalk.bold('Expires:')}    in ${labelMap[ttl] || ttl}`);
+        const labelMap: Record<string, string> = { '5m': '5 minutes', '1h': '1 hour', '24h': '24 hours' };
+        console.log(`${chalk.bold('Expires:')}    in ${labelMap[ttl] ?? ttl}`);
       }
 
       console.log('');
       console.log(`${chalk.bold('Copy:')} ${chalk.cyan(shortUrl)}`);
     } catch (err) {
       spinner.fail(chalk.red('Request failed'));
-      console.error(chalk.red(`✗ ${err.message}`));
+      console.error(chalk.red(`✗ ${(err as Error).message}`));
       process.exit(1);
     }
   });

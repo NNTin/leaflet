@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 export default function RedirectPage() {
-  const { code } = useParams()
+  const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -12,9 +12,6 @@ export default function RedirectPage() {
       return
     }
 
-    // Call the backend redirect endpoint directly.
-    // The backend returns 302; axios follows redirects, so we use fetch
-    // with redirect:'manual' to intercept the Location header.
     fetch(`/api/${code}`, {
       method: 'GET',
       credentials: 'include',
@@ -26,14 +23,12 @@ export default function RedirectPage() {
           if (location) {
             window.location.href = location
           } else {
-            // Fallback: navigate browser directly to backend URL
             window.location.href = `/api/${code}`
           }
         } else if (res.status === 404 || res.status === 410) {
           navigate('/expired')
         } else if (res.ok) {
-          // Some backends return 200 with a redirect URL in JSON
-          res.json().then(data => {
+          res.json().then((data: { url?: string }) => {
             if (data?.url) {
               window.location.href = data.url
             } else {

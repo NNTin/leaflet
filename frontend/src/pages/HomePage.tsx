@@ -1,28 +1,45 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
 import Navbar from '../components/Navbar'
 import api from '../api'
 import styles from './HomePage.module.css'
 
-const TTL_OPTIONS = [
+interface TtlOption {
+  label: string;
+  value: string;
+}
+
+const TTL_OPTIONS: TtlOption[] = [
   { label: '5 minutes', value: '5m' },
   { label: '1 hour', value: '1h' },
   { label: '24 hours', value: '24h' },
 ]
 
-const ADMIN_TTL = { label: 'Never expire', value: 'never' }
+const ADMIN_TTL: TtlOption = { label: 'Never expire', value: 'never' }
+
+interface User {
+  username: string;
+  role: string;
+}
+
+interface ShortenResponse {
+  shortCode: string;
+  shortUrl: string;
+  expiresAt: string | null;
+}
 
 export default function HomePage() {
   const navigate = useNavigate()
   const [url, setUrl] = useState('')
   const [ttl, setTtl] = useState('24h')
   const [alias, setAlias] = useState('')
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    api.get('/auth/me', { baseURL: '' })
+    api.get<User>('/auth/me', { baseURL: '' })
       .then(res => setUser(res.data))
       .catch(() => setUser(null))
   }, [])
@@ -33,7 +50,7 @@ export default function HomePage() {
 
   const canAlias = user?.role === 'admin' || user?.role === 'privileged'
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
 
@@ -51,17 +68,21 @@ export default function HomePage() {
 
     setLoading(true)
     try {
-      const payload = { url: url.trim(), ttl }
+      const payload: { url: string; ttl: string; alias?: string } = { url: url.trim(), ttl }
       if (canAlias && alias.trim()) {
         payload.alias = alias.trim()
       }
 
-      const res = await api.post('/shorten', payload)
+      const res = await api.post<ShortenResponse>('/shorten', payload)
       const { shortCode, shortUrl, expiresAt } = res.data
       navigate('/result', { state: { shortCode, shortUrl, expiresAt } })
     } catch (err) {
-      const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to shorten URL. Please try again.'
-      setError(msg)
+      if (axios.isAxiosError(err)) {
+        const msg = err.response?.data?.error ?? err.response?.data?.message ?? 'Failed to shorten URL. Please try again.'
+        setError(msg)
+      } else {
+        setError('Failed to shorten URL. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -130,7 +151,7 @@ export default function HomePage() {
                     placeholder="my-custom-link"
                     value={alias}
                     onChange={e => setAlias(e.target.value.replace(/[^a-zA-Z0-9-_]/g, ''))}
-                    maxLength={40}
+                    maxLength={50}
                   />
                 </div>
               </div>

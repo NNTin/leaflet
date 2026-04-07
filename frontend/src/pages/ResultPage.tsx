@@ -1,21 +1,32 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import Navbar from '../components/Navbar'
 import styles from './ResultPage.module.css'
 
+interface ResultState {
+  shortUrl: string;
+  shortCode: string;
+  expiresAt: string | null;
+}
+
 export default function ResultPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
-  const qrRef = useRef(null)
+  const qrRef = useRef<HTMLDivElement>(null)
 
-  if (!state?.shortUrl) {
-    navigate('/')
-    return null
-  }
+  const resultState = state as ResultState | null
 
-  const { shortUrl, shortCode, expiresAt } = state
+  useEffect(() => {
+    if (!resultState?.shortUrl) {
+      navigate('/')
+    }
+  }, [resultState, navigate])
+
+  if (!resultState?.shortUrl) return null
+
+  const { shortUrl, shortCode, expiresAt } = resultState
 
   function copyUrl() {
     navigator.clipboard.writeText(shortUrl).then(() => {
@@ -38,7 +49,7 @@ export default function ResultPage() {
     ? new Date(expiresAt).toLocaleString(undefined, {
         dateStyle: 'medium',
         timeStyle: 'short',
-      })
+      } as Intl.DateTimeFormatOptions)
     : 'Never'
 
   return (

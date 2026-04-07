@@ -1,4 +1,5 @@
-const { customAlphabet } = require('nanoid');
+import { customAlphabet } from 'nanoid';
+import { Pool } from 'pg';
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const SHORT_CODE_LENGTH = 6;
@@ -8,10 +9,8 @@ const nanoid = customAlphabet(ALPHABET, SHORT_CODE_LENGTH);
 
 /**
  * Generate a unique short code, retrying up to MAX_COLLISION_RETRIES times on collision.
- * @param {import('pg').Pool} pool - PostgreSQL connection pool
- * @returns {Promise<string|null>} unique short code, or null if all attempts failed
  */
-async function generateShortCode(pool) {
+export async function generateShortCode(pool: Pool): Promise<string | null> {
   for (let attempt = 0; attempt < MAX_COLLISION_RETRIES; attempt++) {
     const code = nanoid();
     const result = await pool.query('SELECT 1 FROM urls WHERE short_code = $1', [code]);
@@ -21,5 +20,3 @@ async function generateShortCode(pool) {
   }
   return null;
 }
-
-module.exports = { generateShortCode };

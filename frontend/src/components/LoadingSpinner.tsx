@@ -1,7 +1,11 @@
 import React from 'react'
 import styles from './LoadingSpinner.module.css'
 
-export default function LoadingSpinner({ fullPage = false }) {
+interface LoadingSpinnerProps {
+  fullPage?: boolean;
+}
+
+export default function LoadingSpinner({ fullPage = false }: LoadingSpinnerProps) {
   if (fullPage) {
     return (
       <div className={styles.fullPage}>

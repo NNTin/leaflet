@@ -1,14 +1,31 @@
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
-const pool = require('../db');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+import express, { Request, Response, NextFunction } from 'express';
+import { body, validationResult } from 'express-validator';
+import pool from '../db';
+import { requireAuth, requireAdmin } from '../middleware/auth';
+import { User } from '../models/user';
 
-// All admin routes require authentication and admin role
+const router = express.Router();
+
 router.use(requireAuth, requireAdmin);
 
-/** Convert snake_case URL row to camelCase for API responses */
-function toUrlDto(row) {
+interface UrlRow {
+  id: number;
+  short_code: string;
+  original_url: string;
+  created_at: Date;
+  expires_at: Date | null;
+  is_custom: boolean;
+  created_by?: string | null;
+}
+
+interface UserRow {
+  id: number;
+  username: string;
+  role: string;
+  created_at: Date;
+}
+
+function toUrlDto(row: UrlRow) {
   return {
     id: row.id,
     shortCode: row.short_code,
@@ -16,12 +33,11 @@ function toUrlDto(row) {
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     isCustom: row.is_custom,
-    createdBy: row.created_by || null,
+    createdBy: row.created_by ?? null,
   };
 }
 
-/** Convert snake_case user row to camelCase for API responses */
-function toUserDto(row) {
+function toUserDto(row: UserRow) {
   return {
     id: row.id,
     username: row.username,
@@ -30,8 +46,7 @@ function toUserDto(row) {
   };
 }
 
-// GET /admin/urls - list all URLs (admin only, camelCase response)
-router.get('/urls', async (req, res, next) => {
+router.get('/urls', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.short_code, u.original_url, u.created_at, u.expires_at, u.is_custom,
@@ -40,25 +55,23 @@ router.get('/urls', async (req, res, next) => {
        LEFT JOIN users us ON u.user_id = us.id
        ORDER BY u.created_at DESC`
     );
-    res.json(result.rows.map(toUrlDto));
+    res.json((result.rows as UrlRow[]).map(toUrlDto));
   } catch (err) {
     next(err);
   }
 });
 
-// GET /admin/users - list all users
-router.get('/users', async (req, res, next) => {
+router.get('/users', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query(
       'SELECT id, github_id, username, role, created_at FROM users ORDER BY created_at DESC'
     );
-    res.json(result.rows.map(toUserDto));
+    res.json((result.rows as UserRow[]).map(toUserDto));
   } catch (err) {
     next(err);
   }
 });
 
-// PATCH /admin/users/:id/role - update a user's role (to 'user' or 'privileged')
 router.patch(
   '/users/:id/role',
   [
@@ -66,7 +79,7 @@ router.patch(
       .isIn(['user', 'privileged'])
       .withMessage("Role must be 'user' or 'privileged'"),
   ],
-  async (req, res, next) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -74,10 +87,9 @@ router.patch(
       }
 
       const { id } = req.params;
-      const { role } = req.body;
+      const { role } = req.body as { role: string };
 
-      // Prevent admins from demoting themselves
-      if (parseInt(id, 10) === req.user.id) {
+      if (parseInt(String(id), 10) === (req.user as User).id) {
         return res.status(400).json({ error: 'You cannot change your own role.' });
       }
 
@@ -90,15 +102,14 @@ router.patch(
         return res.status(404).json({ error: 'User not found or is an admin whose role cannot be changed.' });
       }
 
-      res.json(toUserDto(result.rows[0]));
+      res.json(toUserDto(result.rows[0] as UserRow));
     } catch (err) {
       next(err);
     }
   }
 );
 
-// DELETE /admin/urls/:id - delete any URL by numeric ID
-router.delete('/urls/:id', async (req, res, next) => {
+router.delete('/urls/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const result = await pool.query('DELETE FROM urls WHERE id = $1 RETURNING id', [id]);
@@ -111,4 +122,4 @@ router.delete('/urls/:id', async (req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

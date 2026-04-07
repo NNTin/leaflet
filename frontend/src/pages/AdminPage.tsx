@@ -6,34 +6,50 @@ import styles from './AdminPage.module.css'
 
 const adminApi = axios.create({ withCredentials: true })
 
-let csrfCache = null
+let csrfCache: string | null = null
 
-async function getCsrf() {
+async function getCsrf(): Promise<string> {
   if (csrfCache) return csrfCache
   try {
-    const res = await axios.get('/auth/csrf-token', { withCredentials: true })
-    csrfCache = res.data?.csrfToken || res.data?.token || ''
+    const res = await axios.get<{ csrfToken?: string; token?: string }>('/auth/csrf-token', { withCredentials: true })
+    csrfCache = res.data?.csrfToken ?? res.data?.token ?? ''
   } catch {
     csrfCache = ''
   }
   return csrfCache
 }
 
-async function authHeaders() {
+async function authHeaders(): Promise<Record<string, string>> {
   const token = await getCsrf()
   return token ? { 'X-CSRF-Token': token } : {}
 }
 
+interface User {
+  id: number;
+  username: string;
+  role: string;
+  createdAt?: string;
+}
+
+interface LinkItem {
+  id: number;
+  shortCode: string;
+  originalUrl: string;
+  createdAt?: string;
+  expiresAt?: string | null;
+  createdBy?: string | null;
+}
+
 export default function AdminPage() {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [tab, setTab] = useState('links')
 
-  const [links, setLinks] = useState([])
+  const [links, setLinks] = useState<LinkItem[]>([])
   const [linksLoading, setLinksLoading] = useState(false)
   const [linksError, setLinksError] = useState('')
 
-  const [users, setUsers] = useState([])
+  const [users, setUsers] = useState<User[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersError, setUsersError] = useState('')
 
@@ -41,7 +57,7 @@ export default function AdminPage() {
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
-    axios.get('/auth/me', { withCredentials: true })
+    axios.get<User>('/auth/me', { withCredentials: true })
       .then(res => setUser(res.data))
       .catch(() => setUser(null))
       .finally(() => setAuthLoading(false))
@@ -49,18 +65,18 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (user?.role !== 'admin') return
-    if (tab === 'links') fetchLinks()
-    if (tab === 'users') fetchUsers()
+    if (tab === 'links') void fetchLinks()
+    if (tab === 'users') void fetchUsers()
   }, [tab, user])
 
   async function fetchLinks() {
     setLinksLoading(true)
     setLinksError('')
     try {
-      const res = await adminApi.get('/admin/urls')
-      setLinks(res.data?.urls || res.data || [])
+      const res = await adminApi.get<LinkItem[] | { urls: LinkItem[] }>('/admin/urls')
+      setLinks(Array.isArray(res.data) ? res.data : res.data.urls ?? [])
     } catch (err) {
-      setLinksError(err.response?.data?.error || 'Failed to load links.')
+      setLinksError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load links.' : 'Failed to load links.')
     } finally {
       setLinksLoading(false)
     }
@@ -70,10 +86,10 @@ export default function AdminPage() {
     setUsersLoading(true)
     setUsersError('')
     try {
-      const res = await adminApi.get('/admin/users')
-      setUsers(res.data?.users || res.data || [])
+      const res = await adminApi.get<User[] | { users: User[] }>('/admin/users')
+      setUsers(Array.isArray(res.data) ? res.data : res.data.users ?? [])
     } catch (err) {
-      setUsersError(err.response?.data?.error || 'Failed to load users.')
+      setUsersError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load users.' : 'Failed to load users.')
     } finally {
       setUsersLoading(false)
     }
@@ -84,7 +100,7 @@ export default function AdminPage() {
     setActionError('')
   }
 
-  async function deleteLink(id) {
+  async function deleteLink(id: number) {
     clearMessages()
     try {
       const headers = await authHeaders()
@@ -93,11 +109,11 @@ export default function AdminPage() {
       setActionMsg('Link deleted.')
     } catch (err) {
       csrfCache = null
-      setActionError(err.response?.data?.error || 'Failed to delete link.')
+      setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to delete link.' : 'Failed to delete link.')
     }
   }
 
-  async function setUserRole(userId, role) {
+  async function setUserRole(userId: number, role: string) {
     clearMessages()
     try {
       const headers = await authHeaders()
@@ -106,7 +122,7 @@ export default function AdminPage() {
       setActionMsg(`User role updated to "${role}".`)
     } catch (err) {
       csrfCache = null
-      setActionError(err.response?.data?.error || 'Failed to update user role.')
+      setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to update user role.' : 'Failed to update user role.')
     }
   }
 
@@ -161,7 +177,7 @@ export default function AdminPage() {
           <div className={`card ${styles.tableCard}`}>
             <div className={styles.tableHeader}>
               <h2 className={styles.tableTitle}>All Links</h2>
-              <button onClick={fetchLinks} className="btn btn-secondary btn-sm">↻ Refresh</button>
+              <button onClick={() => void fetchLinks()} className="btn btn-secondary btn-sm">↻ Refresh</button>
             </div>
             {linksLoading ? (
               <div className={styles.center}><LoadingSpinner /></div>
@@ -208,10 +224,10 @@ export default function AdminPage() {
                         </td>
                         <td>{link.createdAt ? new Date(link.createdAt).toLocaleDateString() : '—'}</td>
                         <td>{link.expiresAt ? new Date(link.expiresAt).toLocaleString() : 'Never'}</td>
-                        <td>{link.createdBy || '—'}</td>
+                        <td>{link.createdBy ?? '—'}</td>
                         <td>
                           <button
-                            onClick={() => deleteLink(link.id)}
+                            onClick={() => void deleteLink(link.id)}
                             className="btn btn-danger btn-sm"
                           >
                             Delete
@@ -230,7 +246,7 @@ export default function AdminPage() {
           <div className={`card ${styles.tableCard}`}>
             <div className={styles.tableHeader}>
               <h2 className={styles.tableTitle}>All Users</h2>
-              <button onClick={fetchUsers} className="btn btn-secondary btn-sm">↻ Refresh</button>
+              <button onClick={() => void fetchUsers()} className="btn btn-secondary btn-sm">↻ Refresh</button>
             </div>
             {usersLoading ? (
               <div className={styles.center}><LoadingSpinner /></div>
@@ -262,7 +278,7 @@ export default function AdminPage() {
                         <td className={styles.actionCell}>
                           {u.role === 'user' && (
                             <button
-                              onClick={() => setUserRole(u.id, 'privileged')}
+                              onClick={() => void setUserRole(u.id, 'privileged')}
                               className="btn btn-secondary btn-sm"
                             >
                               Make Privileged
@@ -270,7 +286,7 @@ export default function AdminPage() {
                           )}
                           {u.role === 'privileged' && (
                             <button
-                              onClick={() => setUserRole(u.id, 'user')}
+                              onClick={() => void setUserRole(u.id, 'user')}
                               className="btn btn-secondary btn-sm"
                             >
                               Make User

@@ -2,12 +2,23 @@ import React from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import styles from './Navbar.module.css'
 
-export default function Navbar({ user, onLogout }) {
+interface NavbarUser {
+  username: string;
+  role: string;
+}
+
+interface NavbarProps {
+  user?: NavbarUser | null;
+  onLogout?: () => void;
+}
+
+export default function Navbar({ user, onLogout }: NavbarProps) {
   const navigate = useNavigate()
 
   function handleLogout() {
-    if (onLogout) onLogout()
-    else {
+    if (onLogout) {
+      onLogout()
+    } else {
       fetch('/auth/logout', { method: 'POST', credentials: 'include' })
         .finally(() => navigate('/'))
     }

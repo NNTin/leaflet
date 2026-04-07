@@ -1,4 +1,5 @@
-require('dotenv').config();
-const app = require('./app');
+import 'dotenv/config';
+import app from './app';
+
 const port = process.env.PORT || 3001;
 app.listen(port, () => console.log(`Leaflet backend running on port ${port}`));

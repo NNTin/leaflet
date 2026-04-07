@@ -35,20 +35,20 @@ components:
       properties:
         id:
           type: integer
-        short_code:
+        shortCode:
           type: string
-        original_url:
+        originalUrl:
           type: string
-        created_at:
+        createdAt:
           type: string
           format: date-time
-        expires_at:
+        expiresAt:
           type: string
           format: date-time
           nullable: true
-        is_custom:
+        isCustom:
           type: boolean
-        created_by:
+        createdBy:
           type: string
           nullable: true
 
