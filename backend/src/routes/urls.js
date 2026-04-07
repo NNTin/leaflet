@@ -5,10 +5,15 @@ const pool = require('../db');
 const { generateShortCode } = require('../shortcode');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+
 const TTL_MAP = {
-  '5m': 5 * 60 * 1000,
-  '60m': 60 * 60 * 1000,
-  '24h': 24 * 60 * 60 * 1000,
+  '5m': 5 * SECONDS_PER_MINUTE * MS_PER_SECOND,
+  '60m': MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
+  '24h': HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
   'never': null,
 };
 
