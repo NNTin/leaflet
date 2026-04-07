@@ -1,0 +1,145 @@
+name: "Copilot Setup Steps"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: leaflet
+          POSTGRES_PASSWORD: leaflet
+          POSTGRES_DB: leaflet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U leaflet -d leaflet"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://leaflet:leaflet@localhost:5432/leaflet
+      SESSION_SECRET: copilot-setup-session-secret
+      FRONTEND_URL: http://localhost:5173
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for PostgreSQL to become ready
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U leaflet -d leaflet; then
+              echo "PostgreSQL is ready."
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/30)"
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time."
+          exit 1
+
+      - name: Run backend migrations
+        run: npm --workspace backend run migrate
+
+      - name: Build frontend
+        run: npm --workspace frontend run build
+
+      - name: CLI sanity check
+        run: node cli/index.js --help
+
+      - name: Health check 1 - Node and npm versions
+        id: health_node_versions
+        continue-on-error: true
+        run: |
+          node --version
+          npm --version
+
+      - name: Health check 2 - Lockfile and workspace integrity
+        id: health_lockfile_integrity
+        continue-on-error: true
+        run: npm ci --dry-run
+
+      - name: Health check 3 - PostgreSQL connectivity
+        id: health_postgres_connectivity
+        continue-on-error: true
+        run: psql "$DATABASE_URL" -c "SELECT 1;"
+
+      - name: Health check 4 - Backend smoke test
+        id: health_backend_smoke
+        continue-on-error: true
+        run: |
+          node backend/src/server.js &
+          BACKEND_PID=$!
+          cleanup() {
+            if kill -0 "$BACKEND_PID" 2>/dev/null; then
+              kill "$BACKEND_PID"
+            fi
+          }
+          trap cleanup EXIT
+
+          for i in {1..20}; do
+            if curl -fsS http://localhost:3001/auth/csrf-token >/dev/null; then
+              echo "Backend smoke check passed."
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Backend smoke check failed."
+          exit 1
+
+      - name: Health check summary and final status
+        if: always()
+        run: |
+          failures=0
+
+          report() {
+            local name="$1"
+            local outcome="$2"
+            if [ "$outcome" = "success" ]; then
+              echo "PASS: $name"
+            else
+              echo "FAIL: $name ($outcome)"
+              failures=$((failures + 1))
+            fi
+          }
+
+          report "Node and npm versions" "${{ steps.health_node_versions.outcome }}"
+          report "Lockfile and workspace integrity" "${{ steps.health_lockfile_integrity.outcome }}"
+          report "PostgreSQL connectivity" "${{ steps.health_postgres_connectivity.outcome }}"
+          report "Backend smoke test" "${{ steps.health_backend_smoke.outcome }}"
+
+          if [ "$failures" -gt 0 ]; then
+            echo "One or more health checks failed."
+            exit 1
+          fi
+
+          echo "All health checks passed."

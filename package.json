@@ -1,0 +1,9 @@
+{
+  "name": "leaflet",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "cli"
+  ]
+}
