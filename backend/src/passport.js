@@ -7,11 +7,15 @@ const adminGithubIds = (process.env.ADMIN_GITHUB_IDS || '')
   .map((id) => id.trim())
   .filter(Boolean);
 
+const clientID = process.env.GITHUB_CLIENT_ID;
+const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+if (clientID && clientSecret) {
 passport.use(
   new GitHubStrategy(
     {
-      clientID: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      clientID,
+      clientSecret,
       callbackURL: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/auth/github/callback',
     },
     async (accessToken, refreshToken, profile, done) => {
@@ -46,6 +50,9 @@ passport.use(
     }
   )
 );
+} else {
+  console.warn('GitHub OAuth credentials not configured. Login will be unavailable.');
+}
 
 passport.serializeUser((user, done) => {
   done(null, user.id);
