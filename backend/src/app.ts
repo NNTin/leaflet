@@ -61,13 +61,9 @@ const sessionOptions: SessionOptions = {
 };
 
 if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
-  type ConnectPgSimple = (session: typeof import('express-session')) => {
-    new (options: { conString?: string; tableName?: string; createTableIfMissing?: boolean }): session.Store;
-  };
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const connectPgSimple = require('connect-pg-simple') as ConnectPgSimple;
-  const PgStore = connectPgSimple(session);
-  sessionOptions.store = new PgStore({
+  const connectPgSimple = require('connect-pg-simple')(session);
+  sessionOptions.store = new connectPgSimple({
     conString: process.env.DATABASE_URL,
     tableName: 'session',
     createTableIfMissing: true,
