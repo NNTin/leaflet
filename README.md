@@ -78,7 +78,7 @@ npm link
 # Shorten a URL
 leaflet-cli shorten https://example.com --ttl=24h
 
-# With custom alias (requires auth token)
+# With custom alias (requires API key)
 leaflet-cli shorten https://example.com --alias=my-link --api-key=your-api-key
 
 # With custom server
