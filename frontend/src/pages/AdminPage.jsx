@@ -84,12 +84,12 @@ export default function AdminPage() {
     setActionError('')
   }
 
-  async function deleteLink(code) {
+  async function deleteLink(id) {
     clearMessages()
     try {
       const headers = await authHeaders()
-      await adminApi.delete(`/admin/urls/${code}`, { headers })
-      setLinks(prev => prev.filter(l => (l.shortCode || l.code) !== code))
+      await adminApi.delete(`/admin/urls/${id}`, { headers })
+      setLinks(prev => prev.filter(l => l.id !== id))
       setActionMsg('Link deleted.')
     } catch (err) {
       csrfCache = null
@@ -183,45 +183,42 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {links.map(link => {
-                      const code = link.shortCode || link.code || link.id
-                      return (
-                        <tr key={code}>
-                          <td>
-                            <a
-                              href={`/s/${code}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={styles.codeLink}
-                            >
-                              {code}
-                            </a>
-                          </td>
-                          <td>
-                            <a
-                              href={link.originalUrl || link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="truncate"
-                              title={link.originalUrl || link.url}
-                            >
-                              {link.originalUrl || link.url}
-                            </a>
-                          </td>
-                          <td>{link.createdAt ? new Date(link.createdAt).toLocaleDateString() : '—'}</td>
-                          <td>{link.expiresAt ? new Date(link.expiresAt).toLocaleString() : 'Never'}</td>
-                          <td>{link.createdBy || link.userId || '—'}</td>
-                          <td>
-                            <button
-                              onClick={() => deleteLink(code)}
-                              className="btn btn-danger btn-sm"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                    {links.map(link => (
+                      <tr key={link.id}>
+                        <td>
+                          <a
+                            href={`/s/${link.shortCode}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.codeLink}
+                          >
+                            {link.shortCode}
+                          </a>
+                        </td>
+                        <td>
+                          <a
+                            href={link.originalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="truncate"
+                            title={link.originalUrl}
+                          >
+                            {link.originalUrl}
+                          </a>
+                        </td>
+                        <td>{link.createdAt ? new Date(link.createdAt).toLocaleDateString() : '—'}</td>
+                        <td>{link.expiresAt ? new Date(link.expiresAt).toLocaleString() : 'Never'}</td>
+                        <td>{link.createdBy || '—'}</td>
+                        <td>
+                          <button
+                            onClick={() => deleteLink(link.id)}
+                            className="btn btn-danger btn-sm"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -254,8 +251,8 @@ export default function AdminPage() {
                   </thead>
                   <tbody>
                     {users.map(u => (
-                      <tr key={u.id || u.username}>
-                        <td className={styles.username}>{u.username || u.githubUsername}</td>
+                      <tr key={u.id}>
+                        <td className={styles.username}>{u.username}</td>
                         <td>
                           <span className={`${styles.roleBadge} ${styles[`role_${u.role}`]}`}>
                             {u.role}

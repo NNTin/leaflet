@@ -10,7 +10,7 @@ const chalk = require('chalk');
 const ora = require('ora');
 
 const DEFAULT_SERVER = process.env.LEAFLET_SERVER || 'http://localhost:3001';
-const DEFAULT_TOKEN = process.env.LEAFLET_TOKEN || '';
+const DEFAULT_API_KEY = process.env.LEAFLET_API_KEY || '';
 
 program
   .name('leaflet-cli')
@@ -21,11 +21,12 @@ program
   .command('shorten <url>')
   .description('Shorten a URL')
   .option('--ttl <ttl>', 'Expiry time: 5m, 1h, 24h, never', '24h')
-  .option('--alias <alias>', 'Custom alias for the short URL (requires auth token)')
-  .option('--token <token>', 'API token or session token for authentication', DEFAULT_TOKEN)
+  .option('--alias <alias>', 'Custom alias for the short URL (requires privileged/admin API key)')
+  .option('--api-key <key>', 'API key for authentication (get from /auth/api-key after OAuth login)', DEFAULT_API_KEY)
   .option('--server <url>', 'Leaflet server URL', DEFAULT_SERVER)
   .action(async (url, options) => {
-    const { ttl, alias, token, server } = options;
+    const { ttl, alias, server } = options;
+    const apiKey = options.apiKey;
 
     const validTTLs = ['5m', '1h', '24h', 'never'];
     if (!validTTLs.includes(ttl)) {
@@ -40,9 +41,21 @@ program
       if (alias) body.alias = alias;
 
       const headers = { 'Content-Type': 'application/json' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-        headers['Cookie'] = `connect.sid=${token}`;
+
+      if (apiKey) {
+        // API key auth: send as Bearer token. CSRF does not apply to Bearer-authenticated requests.
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      } else {
+        // No auth: anonymous request. Fetch a CSRF token first.
+        try {
+          const csrfRes = await fetch(`${server}/auth/csrf-token`);
+          if (csrfRes.ok) {
+            const { csrfToken } = await csrfRes.json();
+            if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+          }
+        } catch {
+          // CSRF token fetch failed; proceed without it (server may be lenient in dev)
+        }
       }
 
       const response = await fetch(`${server}/api/shorten`, {
@@ -55,14 +68,15 @@ program
 
       if (!response.ok) {
         spinner.fail(chalk.red('Failed to create short URL'));
-        console.error(chalk.red(`✗ Error: ${data.error || data.message || response.statusText}`));
+        const msg = data.error || (data.errors && data.errors.map(e => e.msg).join(', ')) || response.statusText;
+        console.error(chalk.red(`✗ Error: ${msg}`));
         process.exit(1);
       }
 
       spinner.succeed(chalk.green('Short URL created!'));
 
-      const shortUrl = data.shortUrl || data.short_url || `${server}/s/${data.code}`;
-      const expiresAt = data.expiresAt || data.expires_at;
+      const shortUrl = data.shortUrl || `${server}/s/${data.shortCode}`;
+      const expiresAt = data.expiresAt;
 
       console.log('');
       console.log(`${chalk.bold('Short URL:')}  ${chalk.cyan(shortUrl)}`);

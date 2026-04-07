@@ -82,6 +82,10 @@ app.get('/auth/csrf-token', (req, res) => {
 app.use((req, res, next) => {
   if (CSRF_SAFE_METHODS.has(req.method)) return next();
 
+  // API key (Bearer token) requests are not cookie-based so CSRF does not apply
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.startsWith('Bearer ')) return next();
+
   const sessionToken = req.session && req.session.csrfToken;
   const requestToken = req.headers['x-csrf-token'];
 
@@ -110,11 +114,12 @@ const globalRateLimiter = rateLimit({
   message: { error: 'Too many requests. Please try again later.' },
 });
 
-// Anonymous rate limiter: 1 request/minute per IP, skipped for authenticated users
+// Anonymous rate limiter: 1 request/minute per IP, skipped for session-auth or API key users
 const anonymousRateLimiter = rateLimit({
   windowMs: ANON_SHORTEN_WINDOW_MS,
   max: ANON_SHORTEN_MAX,
-  skip: (req) => req.isAuthenticated(),
+  // Skip if session-authenticated OR if a Bearer token is present (API key auth)
+  skip: (req) => req.isAuthenticated() || (req.headers.authorization || '').startsWith('Bearer '),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please log in or wait before trying again.' },
@@ -138,6 +143,20 @@ const adminRateLimiter = rateLimit({
   message: { error: 'Too many admin requests. Please try again later.' },
 });
 
+// OpenAPI spec: register raw JSON endpoint BEFORE the url catch-all (GET /api/:code)
+// so the specific path is not swallowed by the wildcard route.
+let swaggerDocument;
+try {
+  swaggerDocument = YAML.load(path.join(__dirname, 'openapi.yaml'));
+} catch (err) {
+  console.warn('Could not load OpenAPI spec:', err.message);
+}
+
+if (swaggerDocument) {
+  // Expose raw spec for the Developer API playground
+  app.get('/api/openapi.json', (req, res) => res.json(swaggerDocument));
+}
+
 app.use('/api', globalRateLimiter);
 app.use('/api/shorten', anonymousRateLimiter);
 app.use('/auth', authRateLimiter);
@@ -147,12 +166,8 @@ app.use('/auth', authRoutes);
 app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
 
-// OpenAPI / Swagger docs
-try {
-  const swaggerDocument = YAML.load(path.join(__dirname, 'openapi.yaml'));
+if (swaggerDocument) {
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-} catch (err) {
-  console.warn('Could not load OpenAPI spec:', err.message);
 }
 
 app.use((err, req, res, next) => {

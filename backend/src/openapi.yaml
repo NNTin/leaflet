@@ -74,6 +74,26 @@ paths:
                   csrfToken:
                     type: string
 
+  /auth/api-key:
+    get:
+      summary: Get or generate an API key for CLI/programmatic access
+      description: Returns the current user's API key. Generates one if it does not exist yet. Use as a Bearer token for CLI requests.
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: API key for the authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey:
+                    type: string
+        '401':
+          description: Not authenticated
+
   /auth/github:
     get:
       summary: Initiate GitHub OAuth flow
@@ -143,7 +163,7 @@ paths:
                   description: The URL to shorten
                 ttl:
                   type: string
-                  enum: [5m, 60m, 24h, never]
+                  enum: [5m, 1h, 24h, never]
                   description: Time-to-live. "never" is admin only.
                 alias:
                   type: string

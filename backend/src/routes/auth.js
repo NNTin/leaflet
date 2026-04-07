@@ -1,6 +1,8 @@
 const express = require('express');
 const passport = require('passport');
+const crypto = require('crypto');
 const router = express.Router();
+const pool = require('../db');
 
 // GET /auth/github - initiate GitHub OAuth flow
 router.get('/github', passport.authenticate('github', { scope: ['read:user'] }));
@@ -33,6 +35,25 @@ router.post('/logout', (req, res, next) => {
       res.json({ message: 'Logged out successfully' });
     });
   });
+});
+
+// GET /auth/api-key - get (or generate) API key for the current user
+// Used by CLI tools to obtain a stable token for programmatic access
+router.get('/api-key', async (req, res, next) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required. Please log in via GitHub OAuth first.' });
+  }
+  try {
+    let { api_key } = req.user;
+    if (!api_key) {
+      api_key = crypto.randomBytes(32).toString('hex');
+      await pool.query('UPDATE users SET api_key = $1 WHERE id = $2', [api_key, req.user.id]);
+      req.user.api_key = api_key;
+    }
+    res.json({ apiKey: api_key });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;
