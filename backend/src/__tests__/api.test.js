@@ -27,8 +27,8 @@ jest.mock('../db', () => {
           id: db.nextUrlId++,
           short_code,
           original_url,
-          user_id: user_id || null,
-          expires_at: expires_at || null,
+          user_id: user_id ?? null,
+          expires_at: expires_at ?? null,
           is_custom: is_custom || false,
           created_at: new Date(),
         };
