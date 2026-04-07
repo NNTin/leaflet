@@ -85,7 +85,7 @@ app.use((req, res, next) => {
   const sessionToken = req.session && req.session.csrfToken;
   const requestToken = req.headers['x-csrf-token'];
 
-  if (sessionToken && requestToken && crypto.timingSafeEqual(
+  if (sessionToken && requestToken && sessionToken.length === requestToken.length && crypto.timingSafeEqual(
     Buffer.from(sessionToken),
     Buffer.from(requestToken)
   )) {

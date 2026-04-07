@@ -202,8 +202,8 @@ paths:
           schema:
             type: string
       responses:
-        '301':
-          description: Permanent redirect to the original URL
+        '302':
+          description: Temporary redirect to the original URL
         '404':
           description: Short URL not found or expired
           content:
