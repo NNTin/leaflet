@@ -59,6 +59,21 @@ components:
           type: string
 
 paths:
+  /auth/csrf-token:
+    get:
+      summary: Get a CSRF token for the current session
+      tags: [Auth]
+      responses:
+        '200':
+          description: CSRF token to include as X-CSRF-Token header in mutating requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrfToken:
+                    type: string
+
   /auth/github:
     get:
       summary: Initiate GitHub OAuth flow

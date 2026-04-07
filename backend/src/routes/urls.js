@@ -101,7 +101,7 @@ router.get('/:code', async (req, res) => {
     return res.status(404).json({ error: 'Short URL not found or has expired.' });
   }
 
-  res.redirect(301, result.rows[0].original_url);
+  res.redirect(302, result.rows[0].original_url);
 });
 
 // GET /api/urls - admin only: list all URLs

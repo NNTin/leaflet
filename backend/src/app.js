@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const session = require('express-session');
 const passport = require('passport');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 const YAML = require('yamljs');
 const swaggerUi = require('swagger-ui-express');
 const path = require('path');
@@ -24,6 +25,8 @@ const AUTH_MAX = 30;
 const ADMIN_WINDOW_MS = 60 * 1000;
 const ADMIN_MAX = 60;
 
+const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 const app = express();
 
 app.set('trust proxy', 1);
@@ -40,19 +43,6 @@ app.use(
 );
 
 app.use(express.json());
-
-// CSRF protection for state-mutating routes: verify Origin/Referer matches FRONTEND_URL
-app.use((req, res, next) => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-
-  const origin = req.headers.origin || req.headers.referer || '';
-  if (origin.startsWith(frontendUrl)) return next();
-
-  // Also allow requests originating from the same host (e.g. Swagger UI / direct API calls in dev)
-  if (process.env.NODE_ENV !== 'production') return next();
-
-  res.status(403).json({ error: 'CSRF check failed: invalid request origin.' });
-});
 
 const sessionOptions = {
   secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
@@ -78,6 +68,38 @@ if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
 app.use(session(sessionOptions));
 app.use(passport.initialize());
 app.use(passport.session());
+
+// CSRF synchronizer-token protection for state-mutating routes.
+// GET /auth/csrf-token issues a token; subsequent mutation requests must echo it
+// via the X-CSRF-Token header. Unauthenticated requests are also validated.
+app.get('/auth/csrf-token', (req, res) => {
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(32).toString('hex');
+  }
+  res.json({ csrfToken: req.session.csrfToken });
+});
+
+app.use((req, res, next) => {
+  if (CSRF_SAFE_METHODS.has(req.method)) return next();
+
+  const sessionToken = req.session && req.session.csrfToken;
+  const requestToken = req.headers['x-csrf-token'];
+
+  if (sessionToken && requestToken && crypto.timingSafeEqual(
+    Buffer.from(sessionToken),
+    Buffer.from(requestToken)
+  )) {
+    return next();
+  }
+
+  // Fall back to Origin check for clients that haven't fetched a token yet
+  const origin = req.headers.origin || req.headers.referer || '';
+  if (origin.startsWith(frontendUrl)) return next();
+
+  if (process.env.NODE_ENV !== 'production') return next();
+
+  res.status(403).json({ error: 'CSRF validation failed.' });
+});
 
 // Global rate limiter for all API and auth routes
 const globalRateLimiter = rateLimit({
