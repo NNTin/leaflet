@@ -1,0 +1,106 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.content {
+  padding-top: 2rem;
+  padding-bottom: 3rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--green-primary);
+  letter-spacing: -0.5px;
+  margin-bottom: 0.6rem;
+}
+
+.description {
+  font-size: 1rem;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 640px;
+}
+
+.code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: 0.9em;
+  color: var(--green-dark);
+}
+
+.infoRow {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+.infoCard {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.65rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.infoLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.infoValue {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+  font-family: monospace;
+}
+
+.swaggerCard {
+  padding: 1rem;
+  overflow: hidden;
+}
+
+/* Override Swagger UI colours to match green theme */
+:global(.swagger-ui .topbar) {
+  display: none;
+}
+
+:global(.swagger-ui .info .title) {
+  color: var(--green-dark) !important;
+}
+
+:global(.swagger-ui .btn.execute) {
+  background: var(--green-primary) !important;
+  border-color: var(--green-primary) !important;
+}
+
+:global(.swagger-ui .opblock.opblock-get .opblock-summary-method) {
+  background: var(--green-primary) !important;
+}
+
+:global(.swagger-ui .opblock.opblock-post .opblock-summary-method) {
+  background: #2196f3 !important;
+}
+
+:global(.swagger-ui .opblock.opblock-delete .opblock-summary-method) {
+  background: #c62828 !important;
+}
+
+:global(.swagger-ui a.nostyle) {
+  color: var(--green-dark) !important;
+}
