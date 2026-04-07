@@ -74,8 +74,21 @@ app.use(session(sessionOptions));
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Global rate limiter applied to all routes — runs before any auth or DB lookups
+// to prevent abuse of middleware-level database queries (e.g. API key lookup).
+const globalRateLimiter = rateLimit({
+  windowMs: GLOBAL_API_WINDOW_MS,
+  max: GLOBAL_API_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
+
+app.use(globalRateLimiter);
+
 // Early middleware: resolve API key user before CSRF check so that
 // CSRF bypass and rate limit skip use a validated user, not raw headers.
+// The global rate limiter above ensures this DB lookup is rate-limited.
 async function earlyApiKeyMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (req.isAuthenticated()) return next();
   const authHeader = req.headers.authorization ?? '';
@@ -127,14 +140,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.status(403).json({ error: 'CSRF validation failed.' });
 });
 
-const globalRateLimiter = rateLimit({
-  windowMs: GLOBAL_API_WINDOW_MS,
-  max: GLOBAL_API_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests. Please try again later.' },
-});
-
 // Anonymous rate limiter: skip for session-auth or validated API key users
 const anonymousRateLimiter = rateLimit({
   windowMs: ANON_SHORTEN_WINDOW_MS,
@@ -172,7 +177,6 @@ if (swaggerDocument) {
   app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
 }
 
-app.use('/api', globalRateLimiter);
 app.use('/api/shorten', anonymousRateLimiter);
 app.use('/auth', authRateLimiter);
 app.use('/admin', adminRateLimiter);
