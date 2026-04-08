@@ -363,6 +363,24 @@ describe('CSRF protection', () => {
     expect([201, 429]).toContain(res.status);
   });
 
+  it('accepts requests from the exact frontend origin without a CSRF token', async () => {
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Origin', 'http://localhost:5173')
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect([201, 429]).toContain(res.status);
+  });
+
+  it('rejects prefix-matching origins that are not the frontend origin', async () => {
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Origin', 'http://localhost:5173.evil.test')
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(403);
+  });
+
   it('bypasses CSRF for Bearer (API key) authenticated requests', async () => {
     makeAdminUser();
     const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer admin-api-key-test').send({ url: 'https://example.com', ttl: '24h' });

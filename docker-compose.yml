@@ -23,11 +23,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://leaflet:leaflet@postgres:5432/leaflet
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      TRUST_PROXY: 1
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
       GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-http://localhost:3001/auth/github/callback}

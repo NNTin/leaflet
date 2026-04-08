@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-openapi.js",
     "dev": "ts-node src/server.ts",
     "migrate": "psql $DATABASE_URL -f migrations/001_init.sql",
     "test": "jest --runInBand --forceExit"

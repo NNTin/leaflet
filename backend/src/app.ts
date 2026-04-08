@@ -30,10 +30,18 @@ const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const app = express();
 
-app.set('trust proxy', 1);
+const trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : (process.env.NODE_ENV === 'test' ? 1 : 0);
+app.set('trust proxy', trustProxy);
 app.use(helmet());
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const frontendOrigin = (() => {
+  try {
+    return new URL(frontendUrl).origin;
+  } catch {
+    return frontendUrl;
+  }
+})();
 
 app.use(
   cors({
@@ -132,10 +140,17 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     return next();
   }
 
-  const origin = req.headers.origin ?? req.headers.referer ?? '';
-  if (origin.startsWith(frontendUrl)) return next();
+  const requestOrigin = (() => {
+    const rawOrigin = req.headers.origin ?? req.headers.referer ?? '';
+    if (!rawOrigin) return '';
+    try {
+      return new URL(rawOrigin).origin;
+    } catch {
+      return '';
+    }
+  })();
 
-  if (process.env.NODE_ENV !== 'production') return next();
+  if (requestOrigin && requestOrigin === frontendOrigin) return next();
 
   res.status(403).json({ error: 'CSRF validation failed.' });
 });

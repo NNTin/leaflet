@@ -92,6 +92,7 @@ leaflet-cli shorten https://example.com --server=https://your-domain.com
 | `PORT` | Backend port | `3001` |
 | `DATABASE_URL` | PostgreSQL connection string | - |
 | `SESSION_SECRET` | Session encryption secret | - |
+| `TRUST_PROXY` | Number of trusted reverse proxies in front of the backend | `0` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | - |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App Secret | - |
 | `GITHUB_CALLBACK_URL` | OAuth callback URL | - |
