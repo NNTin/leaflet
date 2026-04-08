@@ -484,7 +484,7 @@ async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): 
 
   const configPath = await writeStoredConfig({
     ...storedConfig,
-    server: resolvedConfig.server,
+    ...(resolvedConfig.serverSource === 'flag' ? { server: resolvedConfig.server } : {}),
     token,
   }, runtime.homeDir);
 
