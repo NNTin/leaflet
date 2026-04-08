@@ -1,0 +1,52 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.icon {
+  font-size: 3.5rem;
+  line-height: 1;
+}
+
+.title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--green-dark);
+  letter-spacing: -0.5px;
+}
+
+.message {
+  font-size: 1.05rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.sub {
+  font-size: 0.92rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.cta {
+  margin-top: 0.5rem;
+  justify-content: center;
+}

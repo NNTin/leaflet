@@ -1,0 +1,355 @@
+openapi: 3.0.3
+info:
+  title: Leaflet URL Shortener API
+  description: Privacy-first URL shortener backend API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        role:
+          type: string
+          enum: [user, privileged, admin]
+        created_at:
+          type: string
+          format: date-time
+
+    ShortUrl:
+      type: object
+      properties:
+        id:
+          type: integer
+        shortCode:
+          type: string
+        originalUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        isCustom:
+          type: boolean
+        createdBy:
+          type: string
+          nullable: true
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /auth/csrf-token:
+    get:
+      summary: Get a CSRF token for the current session
+      tags: [Auth]
+      responses:
+        '200':
+          description: CSRF token to include as X-CSRF-Token header in mutating requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrfToken:
+                    type: string
+
+  /auth/api-key:
+    get:
+      summary: Get or generate an API key for CLI/programmatic access
+      description: Returns the current user's API key. Generates one if it does not exist yet. Use as a Bearer token for CLI requests.
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: API key for the authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey:
+                    type: string
+        '401':
+          description: Not authenticated
+
+  /auth/github:
+    get:
+      summary: Initiate GitHub OAuth flow
+      tags: [Auth]
+      responses:
+        '302':
+          description: Redirects to GitHub OAuth
+
+  /auth/github/callback:
+    get:
+      summary: GitHub OAuth callback
+      tags: [Auth]
+      responses:
+        '302':
+          description: Redirects to frontend after authentication
+
+  /auth/me:
+    get:
+      summary: Get current authenticated user
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current user or null if not authenticated
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/User'
+                  - type: 'null'
+
+  /auth/logout:
+    post:
+      summary: Log out current session
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successfully logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /api/shorten:
+    post:
+      summary: Create a short URL
+      tags: [URLs]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, ttl]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: The URL to shorten
+                ttl:
+                  type: string
+                  enum: [5m, 1h, 24h, never]
+                  description: Time-to-live. "never" is admin only.
+                alias:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  description: Custom short code alias. Privileged/admin only.
+      responses:
+        '201':
+          description: Short URL created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shortCode:
+                    type: string
+                  shortUrl:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Alias already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded (anonymous users)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/{code}:
+    get:
+      summary: Redirect to original URL
+      tags: [URLs]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Temporary redirect to the original URL
+        '404':
+          description: Short URL not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/urls:
+    get:
+      summary: List all URLs (admin only)
+      tags: [URLs]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: List of all short URLs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ShortUrl'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Admin access required
+
+  /api/urls/{id}:
+    delete:
+      summary: Delete a URL (admin only)
+      tags: [URLs]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: URL deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Admin access required
+        '404':
+          description: URL not found
+
+  /admin/users:
+    get:
+      summary: List all users (admin only)
+      tags: [Admin]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: List of all users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Admin access required
+
+  /admin/users/{id}/role:
+    patch:
+      summary: Update a user's role (admin only)
+      tags: [Admin]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [user, privileged]
+      responses:
+        '200':
+          description: Updated user object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Admin access required
+        '404':
+          description: User not found
+
+  /admin/urls/{id}:
+    delete:
+      summary: Delete any URL (admin only)
+      tags: [Admin]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: URL deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Admin access required
+        '404':
+          description: URL not found

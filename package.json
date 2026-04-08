@@ -1,0 +1,12 @@
+{
+  "name": "leaflet",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "cli"
+  ],
+  "dependencies": {
+    "@babel/generator": "^7.29.1"
+  }
+}

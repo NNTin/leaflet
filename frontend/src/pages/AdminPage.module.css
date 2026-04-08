@@ -1,0 +1,173 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+}
+
+.content {
+  padding-top: 2rem;
+  padding-bottom: 3rem;
+}
+
+.heading {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--green-primary);
+  letter-spacing: -0.5px;
+  margin-bottom: 1.5rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--green-primary);
+}
+
+.tabActive {
+  color: var(--green-primary);
+  border-bottom-color: var(--green-primary);
+  background: var(--bg);
+}
+
+.tableCard {
+  padding: 1.25rem;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tableTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.93rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.codeLink {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--green-primary);
+}
+
+.username {
+  font-weight: 600;
+}
+
+.roleBadge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.role_admin {
+  background: #e8f5e9;
+  color: var(--green-dark);
+  border-color: #a5d6a7;
+}
+
+.role_privileged {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #90caf9;
+}
+
+.role_user {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.actionCell {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.adminNote {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* 403 card */
+.forbiddenCard {
+  max-width: 420px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.forbiddenIcon {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.forbiddenTitle {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #c62828;
+}
+
+.forbiddenMsg {
+  font-size: 0.97rem;
+  color: var(--muted);
+}
