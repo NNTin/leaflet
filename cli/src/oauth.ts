@@ -136,18 +136,28 @@ export function startCallbackServer(
 
 /** Opens a URL in the system default browser. */
 export async function openBrowser(url: string): Promise<void> {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
+  const { spawn } = await import('child_process');
 
+  // Pass the URL as a separate argument (not via shell interpolation) to
+  // avoid command injection if the URL contains shell metacharacters.
   const platform = process.platform;
+  let cmd: string;
   if (platform === 'darwin') {
-    await execAsync(`open "${url}"`);
+    cmd = 'open';
   } else if (platform === 'win32') {
-    await execAsync(`start "" "${url}"`);
+    cmd = 'cmd';
   } else {
-    await execAsync(`xdg-open "${url}"`);
+    cmd = 'xdg-open';
   }
+
+  const args = platform === 'win32' ? ['/c', 'start', '', url] : [url];
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    child.on('error', reject);
+    child.on('spawn', resolve);
+    child.unref();
+  });
 }
 
 /** Exchanges an authorization code for tokens via POST /oauth/token. */

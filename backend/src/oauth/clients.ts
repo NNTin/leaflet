@@ -17,7 +17,13 @@ export interface OAuthClient {
 /**
  * Hashes a client secret using SHA-256 with client_id as a domain separator,
  * so the same raw secret stored for two different clients produces different hashes.
- * Client secrets are high-entropy random values, making SHA-256 suitable here.
+ *
+ * SHA-256 is appropriate here rather than a password-hashing function such as
+ * bcrypt because client secrets are cryptographically random 32-byte values
+ * (256 bits of entropy). High-entropy random secrets are not vulnerable to
+ * dictionary or rainbow-table attacks, and SHA-256's speed is not a concern
+ * at this entropy level. Using a simpler hash keeps the verification path fast
+ * and dependency-free.
  */
 export function hashClientSecret(clientId: string, rawSecret: string): string {
   return crypto
