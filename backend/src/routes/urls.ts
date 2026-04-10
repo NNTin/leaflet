@@ -4,6 +4,7 @@ import pool from '../db';
 import { generateShortCode } from '../shortcode';
 import { requireAuth, requireAdmin, optionalApiKeyAuth } from '../middleware/auth';
 import { User } from '../models/user';
+import { publicShortUrlBase } from '../config';
 
 const router = express.Router();
 
@@ -39,6 +40,26 @@ function toUrlDto(row: UrlRow) {
     isCustom: row.is_custom,
     createdBy: row.created_by ?? null,
   };
+}
+
+export async function redirectShortCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { code } = req.params;
+    const result = await pool.query(
+      `SELECT original_url FROM urls
+       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Short URL not found or has expired.' });
+      return;
+    }
+
+    res.redirect(302, result.rows[0].original_url as string);
+  } catch (err) {
+    next(err);
+  }
 }
 
 router.post(
@@ -100,11 +121,10 @@ router.post(
       );
 
       const row = result.rows[0] as { short_code: string; expires_at: Date | null };
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
       res.status(201).json({
         shortCode: row.short_code,
-        shortUrl: `${frontendUrl}/s/${row.short_code}`,
+        shortUrl: `${publicShortUrlBase}/${encodeURIComponent(row.short_code)}`,
         expiresAt: row.expires_at,
       });
     } catch (err) {
@@ -141,23 +161,6 @@ router.delete('/urls/:id', requireAuth, requireAdmin, async (req: Request, res: 
   }
 });
 
-router.get('/:code', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { code } = req.params;
-    const result = await pool.query(
-      `SELECT original_url FROM urls
-       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
-      [code]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Short URL not found or has expired.' });
-    }
-
-    res.redirect(302, result.rows[0].original_url as string);
-  } catch (err) {
-    next(err);
-  }
-});
+router.get('/:code', redirectShortCode);
 
 export default router;

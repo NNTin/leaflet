@@ -3,16 +3,44 @@ import passport from 'passport';
 import crypto from 'crypto';
 import pool from '../db';
 import { User } from '../models/user';
+import { addAuthFailureParam, defaultFrontendUrl, resolveOAuthReturnTo } from '../config';
 
 const router = express.Router();
 
-router.get('/github', passport.authenticate('github', { scope: ['read:user'] }));
+function consumeOAuthReturnTo(req: Request): string {
+  const returnTo = req.session.oauthReturnTo ?? defaultFrontendUrl;
+  delete req.session.oauthReturnTo;
+  return returnTo;
+}
+
+router.get('/github', (req: Request, res: Response, next: NextFunction) => {
+  const rawReturnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : undefined;
+  req.session.oauthReturnTo = resolveOAuthReturnTo(rawReturnTo);
+
+  req.session.save((err) => {
+    if (err) return next(err);
+    passport.authenticate('github', { scope: ['read:user'] })(req, res, next);
+  });
+});
 
 router.get(
   '/github/callback',
-  passport.authenticate('github', { failureRedirect: `${process.env.FRONTEND_URL || 'http://localhost:5173'}?auth=failed` }),
-  (req: Request, res: Response) => {
-    res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
+  (req: Request, res: Response, next: NextFunction) => {
+    const returnTo = consumeOAuthReturnTo(req);
+
+    passport.authenticate('github', (err: Error | null, user?: Express.User | false) => {
+      if (err) return next(err);
+
+      if (!user) {
+        res.redirect(addAuthFailureParam(returnTo));
+        return;
+      }
+
+      req.logIn(user, (loginErr) => {
+        if (loginErr) return next(loginErr);
+        res.redirect(returnTo);
+      });
+    })(req, res, next);
   }
 );
 
