@@ -6,11 +6,11 @@ Goal: integrate Leaflet into `lair.nntin.xyz` while serving the frontend from bo
 
 ### 1. Choose the routing shape
 
-- [ ] Use `https://nntin.xyz/leaflet/` as the GitHub Pages frontend URL because GitHub Pages already owns the `nntin.xyz` CNAME.
-- [ ] Use `https://leaflet.lair.nntin.xyz` as the self-hosted app and API origin.
+- [x] Use `https://nntin.xyz/leaflet/` as the GitHub Pages frontend URL because GitHub Pages already owns the `nntin.xyz` CNAME.
+- [x] Use `https://leaflet.lair.nntin.xyz` as the self-hosted app and API origin.
 - [x] Use backend-side short-link redirects as canonical, for example `https://leaflet.lair.nntin.xyz/s/<code>`, so short links return real HTTP redirects without relying on GitHub Pages or browser JavaScript.
-- [ ] Route both frontend and backend through Traefik on the same host, `leaflet.lair.nntin.xyz`, with backend routes given a higher priority than the frontend catch-all route.
-- [ ] Keep Postgres reachable only from the Leaflet Docker network; do not publish a host port and do not attach it to `lair-network`.
+- [x] Route both frontend and backend through Traefik on the same host, `leaflet.lair.nntin.xyz`, with backend routes given a higher priority than the frontend catch-all route.
+- [x] Keep Postgres reachable only from the Leaflet Docker network; do not publish a host port and do not attach it to `lair-network`.
 
 Preferred Traefik split:
 
@@ -24,8 +24,8 @@ Host(`leaflet.lair.nntin.xyz`) && PathPrefix(`/`)
 
 ### 2. Update Docker Compose
 
-- [ ] Add a project-local private network, for example `leaflet-network`.
-- [ ] Add the shared external network:
+- [x] Add a project-local private network, for example `leaflet-network`.
+- [x] Add the shared external network:
 
   ```yaml
   lair-network:
@@ -33,26 +33,26 @@ Host(`leaflet.lair.nntin.xyz`) && PathPrefix(`/`)
     name: lair-network
   ```
 
-- [ ] Attach `postgres` only to `leaflet-network`.
-- [ ] Replace default Postgres credentials with required production variables, for example `LEAFLET_POSTGRES_PASSWORD`, and use Compose required variable syntax so deployment fails if secrets are missing.
-- [ ] Remove the `postgres` host port mapping:
+- [x] Attach `postgres` only to `leaflet-network`.
+- [x] Replace default Postgres credentials with required production variables, for example `LEAFLET_POSTGRES_PASSWORD`, and use Compose required variable syntax so deployment fails if secrets are missing.
+- [x] Remove the `postgres` host port mapping:
 
   ```yaml
   ports:
     - "5432:5432"
   ```
 
-- [ ] Attach `backend` to `leaflet-network` and `lair-network`.
-- [ ] Replace backend default secret fallbacks with required variables for `SESSION_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL`, and `ADMIN_GITHUB_IDS`.
-- [ ] Replace the backend host port mapping with `expose: ["3001"]`.
-- [ ] Add backend Traefik labels for `leaflet.lair.nntin.xyz` API/auth/admin/api-docs/short-link paths, `websecure`, `letsencrypt`, service port `3001`, and `traefik.docker.network=lair-network`.
-- [ ] Remove the backend proxy blocks from `frontend/nginx.conf` for `/api/`, `/auth/`, and `/admin/`; Traefik should route those paths directly to the backend.
-- [ ] Attach `frontend` only to `lair-network`; do not attach it to `leaflet-network` after removing the Nginx backend proxy.
-- [ ] Replace the frontend host port mapping with `expose: ["80"]`.
-- [ ] Add frontend Traefik labels for the `leaflet.lair.nntin.xyz` catch-all route, `websecure`, `letsencrypt`, service port `80`, and `traefik.docker.network=lair-network`.
-- [ ] Set explicit Traefik priorities so backend paths win over the frontend SPA fallback.
-- [ ] Add Loki logging labels/options consistent with `Tinkero` and `GitTinkerer` if Leaflet should appear in the central logs.
-- [ ] Decide whether to add Prometheus scrape labels only after Leaflet exposes a real metrics endpoint.
+- [x] Attach `backend` to `leaflet-network` and `lair-network`.
+- [x] Replace backend default secret fallbacks with required variables for `SESSION_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL`, and `ADMIN_GITHUB_IDS`.
+- [x] Replace the backend host port mapping with `expose: ["3001"]`.
+- [x] Add backend Traefik labels for `leaflet.lair.nntin.xyz` API/auth/admin/api-docs/short-link paths, `websecure`, `letsencrypt`, service port `3001`, and `traefik.docker.network=lair-network`.
+- [x] Remove the backend proxy blocks from `frontend/nginx.conf` for `/api/`, `/auth/`, and `/admin/`; Traefik should route those paths directly to the backend.
+- [x] Attach `frontend` only to `lair-network`; do not attach it to `leaflet-network` after removing the Nginx backend proxy.
+- [x] Replace the frontend host port mapping with `expose: ["80"]`.
+- [x] Add frontend Traefik labels for the `leaflet.lair.nntin.xyz` catch-all route, `websecure`, `letsencrypt`, service port `80`, and `traefik.docker.network=lair-network`.
+- [x] Set explicit Traefik priorities so backend paths win over the frontend SPA fallback.
+- [x] Add Loki logging labels/options consistent with `Tinkero` and `GitTinkerer` if Leaflet should appear in the central logs.
+- [x] Decide whether to add Prometheus scrape labels only after Leaflet exposes a real metrics endpoint.
 
 The root `docker-compose.yml` does not need to join `leaflet-network` if Traefik reaches Leaflet through `lair-network`. This follows the GitTinkerer-style shared edge network while keeping the database on a private project network.
 
@@ -75,9 +75,9 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 - [x] Store the validated `returnTo` value in the session or a signed OAuth `state` value before redirecting to GitHub.
 - [x] Validate any OAuth `returnTo` target against the allowed frontend origins and allowed app paths (`/leaflet/` for `nntin.xyz`, `/` for `leaflet.lair.nntin.xyz`) before redirecting.
 - [x] Use the validated `returnTo` target for both OAuth success and failure redirects, then clear it after the callback.
-- [ ] Configure GitHub OAuth callback URL as `https://leaflet.lair.nntin.xyz/auth/github/callback`.
-- [ ] Require production secrets and database credentials in Compose with required variable syntax; do not keep `leaflet`/`leaflet` database credentials or `change-me-in-production` fallbacks in the production path.
-- [ ] Set production backend env:
+- [x] Configure GitHub OAuth callback URL as `https://leaflet.lair.nntin.xyz/auth/github/callback`.
+- [x] Require production secrets and database credentials in Compose with required variable syntax; do not keep `leaflet`/`leaflet` database credentials or `change-me-in-production` fallbacks in the production path.
+- [x] Set production backend env:
 
   ```env
   NODE_ENV=production
@@ -134,10 +134,10 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 
 ### 5. Configure GitHub Pages deployment
 
-- [ ] Treat `projects/leaflet` as the `https://github.com/NNTin/leaflet` git submodule; make GitHub Pages workflow changes in the Leaflet repository, not the `lair.nntin.xyz` parent repository.
-- [ ] Add or update the GitHub Actions workflow for the Leaflet frontend build in `https://github.com/NNTin/leaflet`.
-- [ ] Build from `frontend` in the Leaflet repository.
-- [ ] Create a GitHub Actions Pages pipeline that builds the frontend and publishes the Vite `dist` output to an orphaned GitHub Pages branch, for example `gh-pages`.
+- [x] Treat `projects/leaflet` as the `https://github.com/NNTin/leaflet` git submodule; make GitHub Pages workflow changes in the Leaflet repository, not the `lair.nntin.xyz` parent repository.
+- [x] Add or update the GitHub Actions workflow for the Leaflet frontend build in `https://github.com/NNTin/leaflet`.
+- [x] Build from `frontend` in the Leaflet repository.
+- [x] Create a GitHub Actions Pages pipeline that builds the frontend and publishes the Vite `dist` output to an orphaned GitHub Pages branch, for example `gh-pages`.
 - [ ] Ensure the Pages branch contains only the generated frontend output and required static files, not source files or secrets.
 - [ ] After creating the pipeline and orphaned Pages branch setup, pause implementation and ask for operator input so GitHub Pages can be enabled in GitHub settings.
 - [ ] Resume validation only after the operator confirms GitHub Pages has been enabled for the orphaned Pages branch.
@@ -150,15 +150,15 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 
 ### 6. Configure DNS and certificates
 
-- [ ] Keep the Traefik and backend configuration targeted at `leaflet.lair.nntin.xyz`.
-- [ ] Do not perform live Traefik/DNS validation in this implementation pass.
+- [x] Keep the Traefik and backend configuration targeted at `leaflet.lair.nntin.xyz`.
+- [x] Do not perform live Traefik/DNS validation in this implementation pass.
 - [ ] If Cloudflare-backed DNS/certificate automation is needed for config rendering, read the Cloudflare token from `projects/leaflet/.env` without exposing or committing it.
-- [ ] Leave final DNS resolution and Let's Encrypt certificate issuance validation to the operator/deployment environment.
-- [ ] Document that no DNS or Traefik change is expected for `nntin.xyz/leaflet/` beyond the existing GitHub Pages CNAME setup.
+- [x] Leave final DNS resolution and Let's Encrypt certificate issuance validation to the operator/deployment environment.
+- [x] Document that no DNS or Traefik change is expected for `nntin.xyz/leaflet/` beyond the existing GitHub Pages CNAME setup.
 
 ### 7. Validate deployment
 
-- [ ] Validate Compose rendering:
+- [x] Validate Compose rendering:
 
   ```bash
   docker compose -f projects/leaflet/docker-compose.yml config
@@ -219,7 +219,7 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 - [ ] Move secrets into environment files or the deployment secret store; do not commit production secrets.
 - [ ] Add a backend health endpoint if Traefik, Compose, or external monitoring should perform HTTP health checks.
 - [ ] Review session cookie settings after cross-origin testing between `nntin.xyz` and `leaflet.lair.nntin.xyz`.
-- [ ] Document the production URLs and CLI server value in the Leaflet README:
+- [x] Document the production URLs and CLI server value in the Leaflet README:
 
   ```bash
   leaflet-cli --server=https://leaflet.lair.nntin.xyz shorten https://example.com

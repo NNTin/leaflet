@@ -1,52 +1,116 @@
-version: '3.8'
+networks:
+  leaflet-network:
+    driver: bridge
+    name: leaflet-network
+  lair-network:
+    external: true
+    name: lair-network
 
 services:
   postgres:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: leaflet
-      POSTGRES_PASSWORD: leaflet
+      POSTGRES_PASSWORD: ${LEAFLET_POSTGRES_PASSWORD:?LEAFLET_POSTGRES_PASSWORD is required}
       POSTGRES_DB: leaflet
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
+    networks:
+      - leaflet-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U leaflet"]
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "loki"
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "102400"
+        loki-external-labels: "service=leaflet-postgres,component=database,environment=production"
+        max-size: "10m"
+        max-file: "3"
+        mode: "non-blocking"
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:3001:3001"
+    expose:
+      - "3001"
     environment:
+      NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://leaflet:leaflet@postgres:5432/leaflet
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
       TRUST_PROXY: 1
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
-      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-http://localhost:3001/auth/github/callback}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      DATABASE_URL: postgresql://leaflet:${LEAFLET_POSTGRES_PASSWORD:?LEAFLET_POSTGRES_PASSWORD is required}@postgres:5432/leaflet
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID is required}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET is required}
+      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:?GITHUB_CALLBACK_URL is required}
+      ADMIN_GITHUB_IDS: ${ADMIN_GITHUB_IDS:?ADMIN_GITHUB_IDS is required}
+      ALLOWED_FRONTEND_ORIGINS: ${ALLOWED_FRONTEND_ORIGINS:-https://nntin.xyz,https://leaflet.lair.nntin.xyz}
+      PUBLIC_SHORT_URL_BASE: ${PUBLIC_SHORT_URL_BASE:-https://leaflet.lair.nntin.xyz/s}
+      PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-https://leaflet.lair.nntin.xyz}
+      DEFAULT_FRONTEND_URL: ${DEFAULT_FRONTEND_URL:-https://nntin.xyz/leaflet}
+    networks:
+      - leaflet-network
+      - lair-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.leaflet-backend.rule=Host(`leaflet.lair.nntin.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/admin`) || PathPrefix(`/api-docs`) || PathPrefix(`/s/`))"
+      - "traefik.http.routers.leaflet-backend.entrypoints=websecure"
+      - "traefik.http.routers.leaflet-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.leaflet-backend.service=leaflet-backend"
+      - "traefik.http.routers.leaflet-backend.priority=100"
+      - "traefik.http.services.leaflet-backend.loadbalancer.server.port=3001"
+      - "traefik.docker.network=lair-network"
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: "loki"
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "102400"
+        loki-external-labels: "service=leaflet-backend,component=backend,environment=production"
+        max-size: "10m"
+        max-file: "3"
+        mode: "non-blocking"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "5173:80"
+    expose:
+      - "80"
+    networks:
+      - lair-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.leaflet-frontend.rule=Host(`leaflet.lair.nntin.xyz`) && PathPrefix(`/`)"
+      - "traefik.http.routers.leaflet-frontend.entrypoints=websecure"
+      - "traefik.http.routers.leaflet-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.leaflet-frontend.service=leaflet-frontend"
+      - "traefik.http.routers.leaflet-frontend.priority=10"
+      - "traefik.http.services.leaflet-frontend.loadbalancer.server.port=80"
+      - "traefik.docker.network=lair-network"
     depends_on:
       - backend
     restart: unless-stopped
+    logging:
+      driver: "loki"
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "102400"
+        loki-external-labels: "service=leaflet-frontend,component=frontend,environment=production"
+        max-size: "10m"
+        max-file: "3"
+        mode: "non-blocking"
 
 volumes:
   postgres_data:
