@@ -205,3 +205,181 @@ test('missing required arguments produce machine-readable commander errors', asy
   assert.match(String(payload.error), /missing required argument/i);
   assert.equal(payload.usage, 'leaflet-cli shorten <url> [options]');
 });
+
+test('auth login rejects an invalid token and does not persist it', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([
+    jsonResponse({ error: 'Authentication required.' }, { status: 401 }),
+  ]);
+
+  const result = await invokeCli([
+    'auth',
+    'login',
+    '--token',
+    'bad-token',
+    '--server',
+    'http://localhost:3001',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 1);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, false);
+  assert.match(String(payload.error), /rejected by the server/i);
+  assert.match(String(payload.hint), /fresh token/i);
+
+  const storedConfig = await readStoredConfig(homeDir);
+  assert.equal(storedConfig.token, undefined);
+});
+
+test('auth login does not store the server when --server is not provided', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([
+    jsonResponse({ error: 'Admin access required.' }, { status: 403 }),
+  ]);
+
+  const result = await invokeCli([
+    'auth',
+    'login',
+    '--token',
+    'test-token',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 0);
+
+  const storedConfig = await readStoredConfig(homeDir);
+  assert.equal(storedConfig.token, 'test-token');
+  assert.equal(storedConfig.server, undefined);
+});
+
+test('auth logout removes the stored token and reports success', async () => {
+  const homeDir = await makeTempHome();
+  const configPath = getConfigPath(homeDir);
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'my-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+
+  const fetchStub = createFetchStub([]);
+
+  const result = await invokeCli([
+    'auth',
+    'logout',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(fetchStub.calls.length, 0);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, true);
+  assert.equal(payload.tokenCleared, true);
+  assert.equal(payload.authenticated, false);
+
+  const storedConfig = await readStoredConfig(homeDir);
+  assert.equal(storedConfig.token, undefined);
+});
+
+test('shorten with an authenticated token sends a Bearer header and skips CSRF', async () => {
+  const homeDir = await makeTempHome();
+  const configPath = getConfigPath(homeDir);
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'admin-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+
+  const fetchStub = createFetchStub([
+    jsonResponse({
+      shortCode: 'xyz789',
+      shortUrl: 'http://localhost:5173/s/xyz789',
+      expiresAt: null,
+    }, { status: 201 }),
+  ]);
+
+  const result = await invokeCli([
+    'shorten',
+    'https://example.com',
+    '--ttl',
+    'never',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 0);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, true);
+  assert.equal(payload.ttl, 'never');
+  assert.equal(payload.mode, 'authenticated');
+
+  assert.equal(fetchStub.calls.length, 1);
+  assert.equal(fetchStub.calls[0].url, 'http://localhost:3001/api/shorten');
+  assert.equal(fetchStub.calls[0].init?.headers?.Authorization, 'Bearer admin-token');
+  assert.equal(fetchStub.calls[0].init?.headers?.Cookie, undefined);
+
+  const requestBody = JSON.parse(fetchStub.calls[0].init?.body ?? '{}') as Record<string, unknown>;
+  assert.equal(requestBody.ttl, 'never');
+});
+
+test('delete succeeds for a valid admin token and numeric id', async () => {
+  const homeDir = await makeTempHome();
+  const configPath = getConfigPath(homeDir);
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'admin-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+
+  const fetchStub = createFetchStub([
+    jsonResponse({ message: 'URL deleted.' }, { status: 200 }),
+  ]);
+
+  const result = await invokeCli([
+    'delete',
+    '42',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 0);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, true);
+  assert.equal(payload.deleted, true);
+  assert.equal(payload.id, 42);
+
+  assert.equal(fetchStub.calls.length, 1);
+  assert.equal(fetchStub.calls[0].url, 'http://localhost:3001/admin/urls/42');
+  assert.equal(fetchStub.calls[0].init?.method, 'DELETE');
+  assert.equal(fetchStub.calls[0].init?.headers?.Authorization, 'Bearer admin-token');
+});
+
+test('delete requires an authenticated token and shows actionable error', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([]);
+
+  const result = await invokeCli([
+    'delete',
+    '42',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(fetchStub.calls.length, 0);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, false);
+  assert.match(String(payload.error), /admin token/i);
+  assert.match(String(payload.hint), /auth login/i);
+});
+
+test('invalid TTL value produces a structured error with allowed values', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([]);
+
+  const result = await invokeCli([
+    'shorten',
+    'https://example.com',
+    '--ttl',
+    '10m',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(fetchStub.calls.length, 0);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, false);
+  assert.match(String(payload.error), /invalid ttl/i);
+  assert.match(String(payload.hint), /shorten --help/i);
+});
