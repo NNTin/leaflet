@@ -2,9 +2,11 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { CliError } from './errors';
+import { StoredOAuth } from './oauth';
 
 export interface StoredConfig {
   token?: string;
+  oauth?: StoredOAuth;
 }
 
 export interface ResolvedConfig {
@@ -55,6 +57,25 @@ export async function readStoredConfig(homeDir = os.homedir()): Promise<StoredCo
       config.token = sanitizeString(record.token);
     }
 
+    if (record.oauth && typeof record.oauth === 'object' && !Array.isArray(record.oauth)) {
+      const o = record.oauth as Record<string, unknown>;
+      if (
+        typeof o.accessToken === 'string' &&
+        typeof o.refreshToken === 'string' &&
+        typeof o.expiresAt === 'number' &&
+        typeof o.scope === 'string' &&
+        typeof o.clientId === 'string'
+      ) {
+        config.oauth = {
+          accessToken: o.accessToken,
+          refreshToken: o.refreshToken,
+          expiresAt: o.expiresAt,
+          scope: o.scope,
+          clientId: o.clientId,
+        };
+      }
+    }
+
     return config;
   } catch (error) {
     const fileError = error as NodeJS.ErrnoException;
@@ -77,6 +98,10 @@ export async function writeStoredConfig(config: StoredConfig, homeDir = os.homed
   if (config.token) {
     const token = sanitizeString(config.token);
     if (token) nextConfig.token = token;
+  }
+
+  if (config.oauth) {
+    nextConfig.oauth = config.oauth;
   }
 
   if (Object.keys(nextConfig).length === 0) {
@@ -116,6 +141,16 @@ export function resolveConfig(input: {
       configPath,
       server: DEFAULT_SERVER,
       token: input.storedConfig.token,
+      tokenSource: 'config',
+    };
+  }
+
+  // Use the OAuth access token when no legacy API key is configured.
+  if (input.storedConfig.oauth?.accessToken) {
+    return {
+      configPath,
+      server: DEFAULT_SERVER,
+      token: input.storedConfig.oauth.accessToken,
       tokenSource: 'config',
     };
   }
