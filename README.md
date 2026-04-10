@@ -68,22 +68,35 @@ npm run dev
 
 ## CLI Tool
 
-Install and use the CLI tool:
+Build and link the CLI from source:
 
 ```bash
-cd cli
 npm install
-npm link
-
-# Shorten a URL
-leaflet-cli shorten https://example.com --ttl=24h
-
-# With custom alias (requires API key)
-leaflet-cli shorten https://example.com --alias=my-link --api-key=your-api-key
-
-# With custom server
-leaflet-cli shorten https://example.com --server=https://your-domain.com
+npm run build --workspace cli
+npm link --workspace cli
 ```
+
+Example usage:
+
+```bash
+# Anonymous shortening
+leaflet-cli shorten https://example.com --ttl=60m
+
+# Store a token locally
+leaflet-cli auth login --token <API_TOKEN>
+
+# Privileged alias
+leaflet-cli shorten https://example.com --ttl=24h --alias=my-link
+
+# Inspect auth status in JSON
+leaflet-cli auth status --json
+
+# Delete a link by id (admin only)
+leaflet-cli delete 42
+```
+
+CLI config can come from flags, environment variables, or `~/.leafletrc`.
+See [cli/README.md](cli/README.md) for command details and JSON output examples.
 
 ## Environment Variables
 
