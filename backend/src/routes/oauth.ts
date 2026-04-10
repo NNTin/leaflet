@@ -661,25 +661,23 @@ router.delete(
         return;
       }
 
-      if (isAdmin || isOwner) {
-        // Full revocation: mark client as revoked and cascade to active tokens.
-        await pool.query(
-          'UPDATE oauth_clients SET revoked_at = NOW() WHERE client_id = $1',
-          [clientId],
-        );
-        await pool.query(
-          'UPDATE oauth_access_tokens SET revoked_at = NOW() WHERE client_id = $1 AND revoked_at IS NULL',
-          [clientId],
-        );
-        await pool.query(
-          'UPDATE oauth_refresh_tokens SET revoked_at = NOW() WHERE client_id = $1 AND revoked_at IS NULL',
-          [clientId],
-        );
-        await pool.query(
-          'UPDATE oauth_consents SET revoked_at = NOW() WHERE client_id = $1',
-          [clientId],
-        );
-      }
+      // Full revocation: mark client as revoked and cascade to active tokens.
+      await pool.query(
+        'UPDATE oauth_clients SET revoked_at = NOW() WHERE client_id = $1',
+        [clientId],
+      );
+      await pool.query(
+        'UPDATE oauth_access_tokens SET revoked_at = NOW() WHERE client_id = $1 AND revoked_at IS NULL',
+        [clientId],
+      );
+      await pool.query(
+        'UPDATE oauth_refresh_tokens SET revoked_at = NOW() WHERE client_id = $1 AND revoked_at IS NULL',
+        [clientId],
+      );
+      await pool.query(
+        'UPDATE oauth_consents SET revoked_at = NOW() WHERE client_id = $1',
+        [clientId],
+      );
 
       res.json({ message: 'Application revoked.' });
     } catch (err) {

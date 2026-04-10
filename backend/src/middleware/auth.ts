@@ -61,8 +61,13 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 
 /**
  * Enforces that an OAuth access token carries the specified scope.
- * Session-based and API-key-based requests bypass scope enforcement
- * so existing role-based access control is fully preserved.
+ *
+ * Session-based and legacy API-key requests bypass scope enforcement so
+ * that existing role-based access control is fully preserved. API keys are
+ * treated as equivalent to full access: they are long-lived admin-issued
+ * credentials used by operators who accept that responsibility. OAuth tokens,
+ * by contrast, are short-lived and explicitly scoped to limit third-party
+ * access — scope enforcement is therefore only applied to them.
  */
 export function requireScope(scope: string) {
   return (req: Request, res: Response, next: NextFunction): void => {

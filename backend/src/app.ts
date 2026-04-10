@@ -197,9 +197,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     return res.status(403).json({ error: 'CSRF validation failed.' });
   }
 
-  // Programmatic requests (no Origin header, no active session) are not subject to
-  // CSRF — browsers always include an Origin on cross-site requests.  Auth middleware
-  // downstream will still reject unauthenticated access appropriately.
+  // Programmatic requests (no Origin header) without an active session are not
+  // subject to CSRF attacks: browsers always include an Origin header on cross-site
+  // POST requests, so an absent Origin means the request is either same-site or
+  // from a non-browser client (CLI, server). If there is no active session, CSRF
+  // cannot be exploited — any endpoint that requires authentication will still
+  // reject the request with 401 via requireAuth downstream.
   if (!requestOrigin && !req.isAuthenticated()) {
     return next();
   }

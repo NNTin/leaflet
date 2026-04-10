@@ -27,7 +27,7 @@ export interface OAuthTokenResponse {
   scope: string;
 }
 
-/** Generates a cryptographically random PKCE code verifier (43–128 chars). */
+/** Generates a cryptographically random PKCE code verifier (43-128 chars). */
 export function generateCodeVerifier(): string {
   return crypto.randomBytes(48).toString('base64url').slice(0, 96);
 }
@@ -42,91 +42,27 @@ export function generateState(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 
-export interface CallbackResult {
-  code: string;
-  state: string;
-  error?: string;
+/** Renders a minimal HTML page for the OAuth callback browser tab. */
+function callbackHtml(title: string, body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>${title} - Leaflet</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:2rem;max-width:440px;text-align:center}
+h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#555}</style></head>
+<body><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
 }
 
 /**
  * Starts a temporary HTTP server on an ephemeral localhost port and waits
  * for the OAuth callback request.
  *
- * @param expectedState - the `state` value we sent in the authorization URL
+ * Returns both the server's port (resolved immediately after listen) and a
+ * promise for the authorization code (resolved when the browser hits the
+ * callback URL). This lets the caller build the authorization URL before
+ * the browser redirect arrives.
+ *
+ * @param expectedState - the `state` value sent in the authorization URL
  * @param timeoutMs     - how long to wait for the browser to complete the flow
- * @returns the parsed code and state from the callback redirect
- */
-export async function waitForCallback(
-  expectedState: string,
-  timeoutMs = 120_000,
-): Promise<{ code: string; port: number }> {
-  return new Promise<{ code: string; port: number }>((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      if (!req.url) {
-        res.end('Bad request');
-        return;
-      }
-
-      const parsed = new URL(req.url, 'http://localhost');
-      if (parsed.pathname !== '/callback') {
-        res.writeHead(404);
-        res.end('Not found');
-        return;
-      }
-
-      const error = parsed.searchParams.get('error');
-      const code = parsed.searchParams.get('code');
-      const returnedState = parsed.searchParams.get('state');
-
-      const html = (title: string, body: string): string => `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>${title} — Leaflet</title>
-<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
-.card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:2rem;max-width:440px;text-align:center}
-h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#555}</style></head>
-<body><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
-
-      if (error) {
-        res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end(html('Authorization denied', `The authorization request was denied: <code>${error}</code>. You can close this tab.`));
-        server.close();
-        reject(new Error(`Authorization denied: ${error}`));
-        return;
-      }
-
-      if (!code || returnedState !== expectedState) {
-        res.writeHead(400, { 'Content-Type': 'text/html' });
-        res.end(html('Invalid response', 'Unexpected response from the authorization server. You can close this tab.'));
-        server.close();
-        reject(new Error('Invalid OAuth callback: missing code or state mismatch'));
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html('Authorization successful', 'You have successfully authorized the Leaflet CLI. You can close this tab.'));
-      server.close();
-      resolve({ code, port: (server.address() as { port: number }).port });
-    });
-
-    server.listen(0, '127.0.0.1', () => {
-      // Server is listening — the port is now known but we haven't resolved yet.
-    });
-
-    const timeout = setTimeout(() => {
-      server.close();
-      reject(new Error('OAuth login timed out. No callback received within 2 minutes.'));
-    }, timeoutMs);
-
-    server.on('close', () => clearTimeout(timeout));
-    server.on('error', reject);
-  }).catch((err: unknown) => {
-    // The resolve with port needs to be done differently
-    throw err;
-  });
-}
-
-/**
- * Like `waitForCallback`, but returns the callback server's port before
- * waiting, so the caller can construct the authorization URL.
  */
 export function startCallbackServer(
   expectedState: string,
@@ -160,16 +96,9 @@ export function startCallbackServer(
     const code = parsed.searchParams.get('code');
     const returnedState = parsed.searchParams.get('state');
 
-    const html = (title: string, body: string): string => `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>${title} — Leaflet</title>
-<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f5f5}
-.card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:2rem;max-width:440px;text-align:center}
-h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#555}</style></head>
-<body><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
-
     if (error) {
       res.writeHead(400, { 'Content-Type': 'text/html' });
-      res.end(html('Authorization denied', `The authorization request was denied: <code>${error}</code>. You can close this tab.`));
+      res.end(callbackHtml('Authorization denied', `The authorization request was denied: <code>${error}</code>. You can close this tab.`));
       server.close();
       reject(new Error(`Authorization denied: ${error}`));
       return;
@@ -177,14 +106,14 @@ h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#555}</style></head>
 
     if (!code || returnedState !== expectedState) {
       res.writeHead(400, { 'Content-Type': 'text/html' });
-      res.end(html('Invalid response', 'Unexpected response from the authorization server. You can close this tab.'));
+      res.end(callbackHtml('Invalid response', 'Unexpected response from the authorization server. You can close this tab.'));
       server.close();
       reject(new Error('Invalid OAuth callback: missing code or state mismatch'));
       return;
     }
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html('Authorization successful', 'You have successfully authorized the Leaflet CLI. You can close this tab.'));
+    res.end(callbackHtml('Authorization successful', 'You have successfully authorized the Leaflet CLI. You can close this tab.'));
     server.close();
     codeResolve(code);
   });
