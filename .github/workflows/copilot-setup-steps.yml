@@ -26,7 +26,7 @@ jobs:
     env:
       NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: postgresql://leaflet:leaflet@localhost:5432/leaflet
+      DATABASE_URL: postgresql://leaflet:leaflet@postgres:5432/leaflet
       SESSION_SECRET: copilot-setup-session-secret
       FRONTEND_URL: http://localhost:5173
 
