@@ -9,24 +9,15 @@ permissions:
 jobs:
   copilot-setup-steps:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: leaflet
-          POSTGRES_PASSWORD: leaflet
-          POSTGRES_DB: leaflet
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U leaflet -d leaflet"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
       NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: postgresql://leaflet:leaflet@localhost:5432/leaflet
+      DATABASE_URL: postgresql://leaflet:leaflet@127.0.0.1:5432/leaflet
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: leaflet
+      PGPASSWORD: leaflet
+      PGDATABASE: leaflet
       SESSION_SECRET: copilot-setup-session-secret
       FRONTEND_URL: http://localhost:5173
 
@@ -45,18 +36,61 @@ jobs:
         run: |
           python -m pip install --upgrade pip
 
-      - name: Install PostgreSQL client
+      - name: Install and configure PostgreSQL
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql postgresql-client
+
+          # Start the default PostgreSQL cluster on the runner.
+          PG_MAJOR="$(psql --version | awk '{print $3}' | cut -d. -f1)"
+          if sudo pg_ctlcluster --skip-systemctl-redirect "$PG_MAJOR" main start; then
+            echo "Started PostgreSQL via pg_ctlcluster ($PG_MAJOR/main)."
+          else
+            sudo service postgresql start
+          fi
+
+          for i in {1..20}; do
+            if sudo -u postgres pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
+              echo "PostgreSQL service is accepting connections."
+              break
+            fi
+            echo "Waiting for PostgreSQL service startup... ($i/20)"
+            sleep 1
+          done
+
+          sudo -u postgres pg_isready -h 127.0.0.1 -p 5432
+
+          sudo -u postgres psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'leaflet') THEN
+              CREATE ROLE leaflet LOGIN PASSWORD 'leaflet';
+            ELSE
+              ALTER ROLE leaflet WITH LOGIN PASSWORD 'leaflet';
+            END IF;
+          END
+          $$;
+          SQL
+
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = 'leaflet'" | grep -q 1; then
+            sudo -u postgres createdb -O leaflet leaflet
+          fi
 
       - name: Install dependencies
         run: npm ci
 
       - name: Wait for PostgreSQL to become ready
         run: |
+          PGHOST="${PGHOST:-127.0.0.1}"
+          PGPORT="${PGPORT:-5432}"
+          PGUSER="${PGUSER:-leaflet}"
+          PGPASSWORD="${PGPASSWORD:-leaflet}"
+          PGDATABASE="${PGDATABASE:-leaflet}"
+          export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
+
           for i in {1..30}; do
-            if psql "$DATABASE_URL" -c "SELECT 1;" >/dev/null 2>&1; then
+            if psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1;" >/dev/null 2>&1; then
               echo "PostgreSQL is ready."
               exit 0
             fi
@@ -70,6 +104,13 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
+          PGHOST="${PGHOST:-127.0.0.1}"
+          PGPORT="${PGPORT:-5432}"
+          PGUSER="${PGUSER:-leaflet}"
+          PGPASSWORD="${PGPASSWORD:-leaflet}"
+          PGDATABASE="${PGDATABASE:-leaflet}"
+          export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
+
           shopt -s nullglob
           migration_files=(migrations/*.sql)
 
@@ -80,14 +121,20 @@ jobs:
 
           for file in "${migration_files[@]}"; do
             echo "Applying $file"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$file"
+            psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -f "$file"
           done
 
       - name: Build frontend
         run: npm --workspace frontend run build
 
+      - name: Build backend
+        run: npm --workspace backend run build
+
+      - name: Build CLI
+        run: npm --workspace cli run build
+
       - name: CLI sanity check
-        run: node cli/index.js --help
+        run: node cli/dist/index.js --help
 
       - name: Health check 1 - Node and npm versions
         id: health_node_versions
@@ -104,12 +151,23 @@ jobs:
       - name: Health check 3 - PostgreSQL connectivity
         id: health_postgres_connectivity
         continue-on-error: true
-        run: psql "$DATABASE_URL" -c "SELECT 1;"
+        run: |
+          PGHOST="${PGHOST:-127.0.0.1}"
+          PGPORT="${PGPORT:-5432}"
+          PGUSER="${PGUSER:-leaflet}"
+          PGPASSWORD="${PGPASSWORD:-leaflet}"
+          PGDATABASE="${PGDATABASE:-leaflet}"
+          export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
+          psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1;"
 
       - name: Health check 4 - Backend smoke test
         id: health_backend_smoke
         continue-on-error: true
         run: |
+          export DATABASE_URL="${DATABASE_URL:-postgresql://leaflet:leaflet@127.0.0.1:5432/leaflet}"
+          export SESSION_SECRET="${SESSION_SECRET:-copilot-setup-session-secret}"
+          export FRONTEND_URL="${FRONTEND_URL:-http://localhost:5173}"
+
           node backend/dist/server.js >/tmp/leaflet-backend.log 2>&1 &
           BACKEND_PID=$!
           cleanup() {
