@@ -66,7 +66,7 @@ if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const connectPgSimple = require('connect-pg-simple')(session);
   sessionOptions.store = new connectPgSimple({
-    conString: process.env.DATABASE_URL,
+    pool,
     tableName: 'session',
     createTableIfMissing: true,
   });

@@ -45,6 +45,7 @@ services:
       PORT: 3001
       TRUST_PROXY: 1
       DATABASE_URL: postgresql://leaflet:${LEAFLET_POSTGRES_PASSWORD:?LEAFLET_POSTGRES_PASSWORD is required}@postgres:5432/leaflet
+      DATABASE_SSL: "false"
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID is required}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET is required}
@@ -59,7 +60,7 @@ services:
       - lair-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.leaflet-backend.rule=Host(`leaflet.lair.nntin.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/admin`) || PathPrefix(`/api-docs`) || PathPrefix(`/s/`))"
+      - "traefik.http.routers.leaflet-backend.rule=Host(`leaflet.lair.nntin.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/admin/`) || PathPrefix(`/api-docs`) || PathPrefix(`/s/`))"
       - "traefik.http.routers.leaflet-backend.entrypoints=websecure"
       - "traefik.http.routers.leaflet-backend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.leaflet-backend.service=leaflet-backend"

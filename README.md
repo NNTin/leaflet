@@ -117,6 +117,8 @@ See [cli/README.md](cli/README.md) for command details and JSON output examples.
 |----------|-------------|---------|
 | `PORT` | Backend port | `3001` |
 | `DATABASE_URL` | PostgreSQL connection string | - |
+| `DATABASE_SSL` | Enable PostgreSQL SSL for external databases | `false` |
+| `DATABASE_SSL_REJECT_UNAUTHORIZED` | Verify the PostgreSQL SSL certificate when `DATABASE_SSL` is enabled | `false` |
 | `SESSION_SECRET` | Session encryption secret | - |
 | `TRUST_PROXY` | Number of trusted reverse proxies in front of the backend | `0` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | - |

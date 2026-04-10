@@ -12,6 +12,7 @@ You are implementing `projects/leaflet/Plan.md` end to end. `projects/leaflet` i
 - [ ] If using subagents, spawn them sequentially only: one subagent at a time, wait for it to finish, review/integrate its work, then decide whether to spawn the next one.
 - [ ] Traefik/DNS live validation is not required for this pass. Do not block completion on live DNS propagation or certificate issuance checks.
 - [ ] Still implement the Traefik/Compose configuration required by the plan; skip only the live Traefik/DNS validation steps.
+- [ ] GitHub Pages is already deployed. Continue from the current `main` branch deployment setup; do not stop for a Pages branch enablement step.
 - [ ] Run the relevant tests/builds/lints for every touched area and record any commands that could not be run.
 
 ## Required Implementation Scope
@@ -21,15 +22,15 @@ You are implementing `projects/leaflet/Plan.md` end to end. `projects/leaflet` i
 - [ ] Split backend URL configuration as described in `Plan.md`, including CORS, CSRF, short-link base, OpenAPI server origin, OAuth return targets, and required production secrets.
 - [ ] Update frontend URL handling so both the Docker/subdomain frontend and the GitHub Pages frontend call the backend correctly.
 - [ ] Remove the frontend Nginx backend proxy dependency and keep frontend networking limited to the shared edge network.
-- [ ] Make GitHub Pages deployment changes in the Leaflet repository, not the parent repository.
+- [ ] Maintain GitHub Pages deployment changes in the Leaflet repository, not the parent repository.
 
-## GitHub Pages Pipeline Stop Point
+## GitHub Pages Deployment Status
 
-- [ ] Create a frontend deployment pipeline that builds the Vite frontend and publishes the generated `dist` output to an orphaned GitHub Pages branch, for example `gh-pages`.
-- [ ] Ensure the orphaned Pages branch contains only generated publishable frontend assets and no source or secrets.
-- [ ] After the pipeline and orphaned branch setup are created, stop and ask the operator to enable GitHub Pages in GitHub settings for the chosen Pages branch.
-- [ ] Do not continue Pages validation until the operator confirms GitHub Pages has been enabled.
-- [ ] After confirmation, resume the plan and validate the GitHub Pages deployment paths in `Plan.md`.
+- [ ] Treat GitHub Pages as already deployed at `https://nntin.xyz/leaflet/`.
+- [ ] Continue working on `main`; the operator confirmed that commits pushed to `main` update the frontend deployment.
+- [ ] Do not create a new Pages stop point or ask the operator to enable Pages again unless a later deployment change actually breaks Pages settings.
+- [ ] Validate `https://nntin.xyz/leaflet/` after frontend changes.
+- [ ] Validate direct browser reloads for `/leaflet/developer` and `/leaflet/admin`. GitHub Pages can return an HTTP `404` status for nested SPA fallback routes while still serving the generated `404.html` body, so browser-level validation is more useful than `curl -I` alone.
 
 ## Validation Expectations
 
@@ -37,4 +38,5 @@ You are implementing `projects/leaflet/Plan.md` end to end. `projects/leaflet` i
 - [ ] Run frontend build/lint after frontend URL/base-path changes.
 - [ ] Run Docker Compose config validation after Compose changes.
 - [ ] Validate backend short-link behavior with HTTP redirect checks where the environment allows it.
-- [ ] Validate GitHub Pages behavior only after the operator confirms the Pages branch has been enabled.
+- [ ] Validate GitHub Pages behavior after each frontend deployment-relevant change.
+- [ ] Treat `leaflet.lair.nntin.xyz` live checks as DNS/deployment checks. Cloudflare now has a DNS-only CNAME for `leaflet.lair.nntin.xyz` pointing at the same target as `lair.nntin.xyz`, and public resolvers return the CNAME plus `84.60.76.145`. The local WSL resolver at `10.255.255.254` may still have a stale not-found result; use public resolver checks or wait for local cache propagation before concluding DNS is still broken.

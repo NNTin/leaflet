@@ -137,16 +137,15 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 - [x] Treat `projects/leaflet` as the `https://github.com/NNTin/leaflet` git submodule; make GitHub Pages workflow changes in the Leaflet repository, not the `lair.nntin.xyz` parent repository.
 - [x] Add or update the GitHub Actions workflow for the Leaflet frontend build in `https://github.com/NNTin/leaflet`.
 - [x] Build from `frontend` in the Leaflet repository.
-- [x] Create a GitHub Actions Pages pipeline that builds the frontend and publishes the Vite `dist` output to an orphaned GitHub Pages branch, for example `gh-pages`.
-- [x] Ensure the Pages branch contains only the generated frontend output and required static files, not source files or secrets.
-- [x] After creating the pipeline and orphaned Pages branch setup, pause implementation and ask for operator input so GitHub Pages can be enabled in GitHub settings.
-- [ ] Resume validation only after the operator confirms GitHub Pages has been enabled for the orphaned Pages branch.
-- [ ] Confirm the published page resolves at `https://nntin.xyz/leaflet/`.
-- [ ] Confirm direct reloads work for:
+- [x] GitHub Pages is deployed; ongoing work is on `main`, and any commit pushed to `main` triggers the frontend deployment workflow.
+- [x] Confirm the published page resolves at `https://nntin.xyz/leaflet/`.
+- [x] Confirm direct reloads serve the SPA fallback for:
 
   - `https://nntin.xyz/leaflet/`
   - `https://nntin.xyz/leaflet/developer`
   - `https://nntin.xyz/leaflet/admin`
+
+  Note: GitHub Pages returns an HTTP `404` status for nested SPA fallback routes while serving the generated `404.html` body. Browser validation confirmed the React app loads for `/leaflet/developer` and `/leaflet/admin`; API-backed widgets still depend on `leaflet.lair.nntin.xyz` being resolvable by the client and the backend deployment being active.
 
 ### 6. Configure DNS and certificates
 
@@ -155,6 +154,9 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 - [x] If Cloudflare-backed DNS/certificate automation is needed for config rendering, read the Cloudflare token from `projects/leaflet/.env` without exposing or committing it.
 - [x] Leave final DNS resolution and Let's Encrypt certificate issuance validation to the operator/deployment environment.
 - [x] Document that no DNS or Traefik change is expected for `nntin.xyz/leaflet/` beyond the existing GitHub Pages CNAME setup.
+- [x] Add DNS for `leaflet.lair.nntin.xyz` in Cloudflare as a DNS-only CNAME to the same target as `lair.nntin.xyz`.
+- [x] Verify public recursive DNS for `leaflet.lair.nntin.xyz` through `1.1.1.1` and `8.8.8.8`; return the CNAME.
+- [x] Re-check local WSL resolver propagation. The WSL resolver now returns `eifkq5p9n7t4s9eq.myfritz.net` and `84.60.76.145` for `leaflet.lair.nntin.xyz`.
 
 ### 7. Validate deployment
 
@@ -164,61 +166,63 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
   docker compose -f projects/leaflet/docker-compose.yml config
   ```
 
-- [ ] Build and start Leaflet:
+- [x] Build and start Leaflet:
 
   ```bash
   docker compose -f projects/leaflet/docker-compose.yml up -d --build
   ```
 
-- [ ] Confirm Postgres has no published host port:
+- [x] Confirm Postgres has no published host port:
 
   ```bash
   docker compose -f projects/leaflet/docker-compose.yml ps
   ```
 
-- [ ] Confirm frontend route:
+- [x] Confirm frontend route:
 
   ```bash
   curl -I https://leaflet.lair.nntin.xyz/
   ```
 
-- [ ] Confirm backend route:
+  Validation returns `HTTP/2 200` from the frontend. A later direct `/admin` check exposed a Traefik routing conflict; narrowing the backend rule to `/admin/` fixed exact `/admin` SPA reloads while keeping `/admin/urls` on the backend.
+
+- [x] Confirm backend route:
 
   ```bash
   curl -I https://leaflet.lair.nntin.xyz/api/openapi.json
   ```
 
-- [ ] Confirm GitHub Pages route:
+- [x] Confirm GitHub Pages route:
 
   ```bash
   curl -I https://nntin.xyz/leaflet/
   ```
 
-- [ ] Confirm backend short-link route returns a real redirect:
+- [x] Confirm backend short-link route returns a real redirect:
 
   ```bash
   curl -I https://leaflet.lair.nntin.xyz/s/<known-code>
   ```
 
-- [ ] From `https://nntin.xyz/leaflet/`, create a short link and confirm the returned URL starts with `https://leaflet.lair.nntin.xyz/s/`.
-- [ ] Open the generated short link directly in a fresh browser session and confirm it redirects to the original URL.
-- [ ] From `https://leaflet.lair.nntin.xyz`, create a short link and confirm it also returns the canonical `https://leaflet.lair.nntin.xyz/s/` URL.
-- [ ] Confirm a non-browser HTTP client receives a redirect without JavaScript:
+- [x] From `https://nntin.xyz/leaflet/`, create a short link and confirm the returned URL starts with `https://leaflet.lair.nntin.xyz/s/`.
+- [x] Open the generated short link directly in a fresh browser session and confirm it redirects to the original URL.
+- [x] From `https://leaflet.lair.nntin.xyz`, create a short link and confirm it also returns the canonical `https://leaflet.lair.nntin.xyz/s/` URL.
+- [x] Confirm a non-browser HTTP client receives a redirect without JavaScript:
 
   ```bash
   curl -I https://leaflet.lair.nntin.xyz/s/<known-code>
   ```
 
-- [ ] Confirm `/api/openapi.json` lists `https://leaflet.lair.nntin.xyz` in its `servers` array.
-- [ ] Confirm the Developer page on both frontend deployments loads Swagger from `https://leaflet.lair.nntin.xyz/api/openapi.json`.
-- [ ] Test GitHub OAuth from both frontend deployments and confirm each flow returns to the frontend where it started.
-- [ ] Test admin pages and logout from both frontend deployments.
+- [x] Confirm `/api/openapi.json` lists `https://leaflet.lair.nntin.xyz` in its `servers` array.
+- [x] Confirm the Developer page on both frontend deployments loads Swagger from `https://leaflet.lair.nntin.xyz/api/openapi.json`.
+- [ ] Test GitHub OAuth from both frontend deployments and confirm each flow returns to the frontend where it started. OAuth start and failure-return redirects were validated for both origins; a successful GitHub login callback still requires an interactive GitHub account flow.
+- [ ] Test admin pages and logout from both frontend deployments. Unauthenticated admin page rendering and CSRF-protected logout were validated for both origins; authenticated admin table/actions still require an interactive GitHub admin login.
 
 ### 8. Follow-up hardening
 
-- [ ] Move secrets into environment files or the deployment secret store; do not commit production secrets.
-- [ ] Add a backend health endpoint if Traefik, Compose, or external monitoring should perform HTTP health checks.
-- [ ] Review session cookie settings after cross-origin testing between `nntin.xyz` and `leaflet.lair.nntin.xyz`.
+- [x] Move secrets into environment files or the deployment secret store; do not commit production secrets. Required local/deployment secrets are kept in the ignored `projects/leaflet/.env`; only the non-secret callback URL was added locally for Compose validation.
+- [ ] Add a backend health endpoint if Traefik, Compose, or external monitoring should perform HTTP health checks. No current Traefik or Compose health-check consumer was added in this pass.
+- [x] Review session cookie settings after cross-origin testing between `nntin.xyz` and `leaflet.lair.nntin.xyz`. Cross-origin CSRF token, create-link, OAuth failure-return, and logout checks passed with the production cookie settings.
 - [x] Document the production URLs and CLI server value in the Leaflet README:
 
   ```bash
