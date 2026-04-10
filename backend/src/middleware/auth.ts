@@ -19,7 +19,9 @@ async function resolveApiKeyUser(req: Request): Promise<boolean> {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.isAuthenticated()) return next();
+  // req.user may already be set by earlyApiKeyMiddleware (OAuth token or API key).
+  if (req.isAuthenticated() || req.user) return next();
+  // Fallback for code paths not running through earlyApiKeyMiddleware.
   if (await resolveApiKeyUser(req)) return next();
   res.status(401).json({ error: 'Authentication required.' });
 }
@@ -29,7 +31,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
  * Does NOT block the request if unauthenticated – allows anonymous access.
  */
 export async function optionalApiKeyAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.isAuthenticated()) {
+  if (!req.isAuthenticated() && !req.user) {
     const authHeader = req.headers.authorization ?? '';
     if (authHeader.startsWith('Bearer ')) {
       await resolveApiKeyUser(req);
@@ -39,20 +41,47 @@ export async function optionalApiKeyAuth(req: Request, res: Response, next: Next
 }
 
 export async function requirePrivileged(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.isAuthenticated() || await resolveApiKeyUser(req)) {
-    const role = req.user && (req.user as User).role;
-    if (role === 'privileged' || role === 'admin') return next();
-    res.status(403).json({ error: 'Privileged account required.' });
+  if (!req.isAuthenticated() && !req.user && !(await resolveApiKeyUser(req))) {
+    res.status(401).json({ error: 'Authentication required.' });
     return;
   }
-  res.status(401).json({ error: 'Authentication required.' });
+  const role = (req.user as User | undefined)?.role;
+  if (role === 'privileged' || role === 'admin') return next();
+  res.status(403).json({ error: 'Privileged account required.' });
 }
 
 export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.isAuthenticated() || await resolveApiKeyUser(req)) {
-    if (req.user && (req.user as User).role === 'admin') return next();
-    res.status(403).json({ error: 'Admin access required.' });
+  if (!req.isAuthenticated() && !req.user && !(await resolveApiKeyUser(req))) {
+    res.status(401).json({ error: 'Authentication required.' });
     return;
   }
-  res.status(401).json({ error: 'Authentication required.' });
+  if ((req.user as User | undefined)?.role === 'admin') return next();
+  res.status(403).json({ error: 'Admin access required.' });
+}
+
+/**
+ * Enforces that an OAuth access token carries the specified scope.
+ * Session-based and API-key-based requests bypass scope enforcement
+ * so existing role-based access control is fully preserved.
+ */
+export function requireScope(scope: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // Session or legacy API key users: no additional scope restriction.
+    if (req.isAuthenticated() || req.apiKeyAuthenticated) {
+      return next();
+    }
+
+    // OAuth token: must include the required scope.
+    if (req.oauthAuthenticated) {
+      if ((req.oauthScopes ?? []).includes(scope)) return next();
+      res.status(403).json({
+        error: 'Insufficient scope.',
+        hint: `Re-authenticate requesting the '${scope}' scope.`,
+      });
+      return;
+    }
+
+    // Not authenticated at all.
+    res.status(401).json({ error: 'Authentication required.' });
+  };
 }

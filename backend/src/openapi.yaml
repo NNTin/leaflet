@@ -14,6 +14,10 @@ components:
       type: apiKey
       in: cookie
       name: connect.sid
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: OAuth 2.0 access token or legacy API key
 
   schemas:
     User:
@@ -57,6 +61,70 @@ components:
       properties:
         error:
           type: string
+
+    OAuthError:
+      type: object
+      properties:
+        error:
+          type: string
+        error_description:
+          type: string
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+          description: Seconds until the access token expires
+        refresh_token:
+          type: string
+        scope:
+          type: string
+
+    OAuthClient:
+      type: object
+      properties:
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+          nullable: true
+          description: Raw secret shown only at registration time; null for public clients
+        name:
+          type: string
+        isPublic:
+          type: boolean
+        redirectUris:
+          type: array
+          items:
+            type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ConsentedApp:
+      type: object
+      properties:
+        clientId:
+          type: string
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        grantedAt:
+          type: string
+          format: date-time
 
 paths:
   /auth/csrf-token:
@@ -143,12 +211,242 @@ paths:
                   message:
                     type: string
 
+  /oauth/authorize:
+    get:
+      summary: OAuth 2.0 Authorization endpoint
+      description: |
+        Presents a consent screen to the authenticated user.
+        Requires the user to be logged in via a browser session (GitHub OAuth).
+        Public clients must include a PKCE code_challenge.
+      tags: [OAuth]
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Space-separated list of requested scopes
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: code_challenge
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Base64url-encoded SHA-256 of the code_verifier (required for public clients)
+        - name: code_challenge_method
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [S256]
+      responses:
+        '200':
+          description: HTML consent page
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redirect to redirect_uri with code or error
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+
+  /oauth/token:
+    post:
+      summary: OAuth 2.0 Token endpoint
+      description: |
+        Exchanges an authorization code for tokens, or refreshes tokens.
+        Uses application/x-www-form-urlencoded request body.
+        No CSRF token required.
+      tags: [OAuth]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code, refresh_token]
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                  description: Required for confidential clients
+                code:
+                  type: string
+                  description: Required for authorization_code grant
+                redirect_uri:
+                  type: string
+                  description: Required for authorization_code grant; must match original
+                code_verifier:
+                  type: string
+                  description: PKCE verifier; required when code_challenge was used
+                refresh_token:
+                  type: string
+                  description: Required for refresh_token grant
+      responses:
+        '200':
+          description: Token response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Invalid request or grant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+        '401':
+          description: Invalid client credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+
+  /oauth/revoke:
+    post:
+      summary: OAuth 2.0 Token Revocation endpoint (RFC 7009)
+      description: |
+        Revokes an access or refresh token. Always returns 200.
+        Uses application/x-www-form-urlencoded request body.
+      tags: [OAuth]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token, client_id]
+              properties:
+                token:
+                  type: string
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+      responses:
+        '200':
+          description: Revocation acknowledged (regardless of whether the token existed)
+
+  /oauth/apps:
+    get:
+      summary: List apps the authenticated user has authorized
+      tags: [OAuth]
+      security:
+        - sessionCookie: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of consented applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConsentedApp'
+        '401':
+          description: Authentication required
+    post:
+      summary: Register a new OAuth client application
+      tags: [OAuth]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, redirectUris, scopes, isPublic]
+              properties:
+                name:
+                  type: string
+                redirectUris:
+                  type: array
+                  items:
+                    type: string
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [shorten:create, shorten:create:never, shorten:create:alias,
+                           urls:read, urls:delete, user:read, admin:*]
+                isPublic:
+                  type: boolean
+      responses:
+        '201':
+          description: Client registered; clientSecret is shown only once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClient'
+        '400':
+          description: Validation error
+        '401':
+          description: Authentication required
+
+  /oauth/apps/{clientId}:
+    delete:
+      summary: Revoke an OAuth client and all its active tokens
+      description: Owner or admin only.
+      tags: [OAuth]
+      security:
+        - sessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application revoked
+        '401':
+          description: Authentication required
+        '403':
+          description: Forbidden
+        '404':
+          description: Client not found
+
   /api/shorten:
     post:
       summary: Create a short URL
       tags: [URLs]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -257,6 +555,7 @@ paths:
       tags: [URLs]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       responses:
         '200':
           description: List of all short URLs
@@ -277,6 +576,7 @@ paths:
       tags: [URLs]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -299,6 +599,7 @@ paths:
       tags: [Admin]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       responses:
         '200':
           description: List of all users
@@ -319,6 +620,7 @@ paths:
       tags: [Admin]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path
@@ -358,6 +660,7 @@ paths:
       tags: [Admin]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       parameters:
         - name: id
           in: path

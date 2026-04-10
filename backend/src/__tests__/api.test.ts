@@ -6,6 +6,7 @@
 
 import request from 'supertest';
 import path from 'path';
+import crypto from 'crypto';
 import YAML from 'yamljs';
 
 interface UrlRecord {
@@ -27,12 +28,57 @@ interface UserRecord {
   api_key: string | null;
 }
 
+interface OAuthClientRecord {
+  id: string;
+  user_id: number | null;
+  name: string;
+  client_id: string;
+  client_secret: string | null;
+  is_public: boolean;
+  redirect_uris: string[];
+  scopes: string[];
+  created_at: Date;
+  revoked_at: Date | null;
+}
+
+interface OAuthCodeRecord {
+  id: string;
+  code: string;
+  client_id: string;
+  user_id: number;
+  redirect_uri: string;
+  scopes: string[];
+  code_challenge: string | null;
+  code_challenge_method: string;
+  expires_at: Date;
+  used_at: Date | null;
+  created_at: Date;
+}
+
+interface OAuthAccessTokenRecord {
+  id: string;
+  token_hash: string;
+  client_id: string;
+  user_id: number;
+  scopes: string[];
+  expires_at: Date;
+  revoked_at: Date | null;
+  created_at: Date;
+}
+
 const db = {
   urls: [] as UrlRecord[],
   users: [] as UserRecord[],
   nextUrlId: 1,
   nextUserId: 1,
+  oauthClients: [] as OAuthClientRecord[],
+  oauthCodes: [] as OAuthCodeRecord[],
+  oauthAccessTokens: [] as OAuthAccessTokenRecord[],
 };
+
+function nextUuid(): string {
+  return crypto.randomUUID();
+}
 
 jest.mock('../db', () => {
   return {
@@ -123,6 +169,104 @@ jest.mock('../db', () => {
         return { rows: [] };
       }
 
+      // OAuth: oauth_clients
+      if (s.startsWith('select * from oauth_clients where client_id')) {
+        const [clientId] = params as [string];
+        return { rows: db.oauthClients.filter(c => c.client_id === clientId && c.revoked_at === null) };
+      }
+
+      if (s.startsWith('insert into oauth_clients')) {
+        const [userId, name, clientId, clientSecret, isPublic, redirectUris, scopes] =
+          params as [number | null, string, string, string | null, boolean, string[], string[]];
+        const row: OAuthClientRecord = {
+          id: nextUuid(), user_id: userId, name, client_id: clientId,
+          client_secret: clientSecret, is_public: isPublic,
+          redirect_uris: redirectUris, scopes, created_at: new Date(), revoked_at: null,
+        };
+        db.oauthClients.push(row);
+        return { rows: [row] };
+      }
+
+      if (s.startsWith('update oauth_clients set revoked_at')) {
+        const [clientId] = params as [string];
+        const c = db.oauthClients.find(c => c.client_id === clientId);
+        if (c) c.revoked_at = new Date();
+        return { rows: [] };
+      }
+
+      // OAuth: oauth_authorization_codes
+      if (s.startsWith('insert into oauth_authorization_codes')) {
+        const [code, clientId, userId, redirectUri, scopes, codeChallenge, codeChallengeMethod, expiresAt] =
+          params as [string, string, number, string, string[], string | null, string, Date];
+        db.oauthCodes.push({
+          id: nextUuid(), code, client_id: clientId, user_id: userId, redirect_uri: redirectUri,
+          scopes, code_challenge: codeChallenge, code_challenge_method: codeChallengeMethod,
+          expires_at: expiresAt, used_at: null, created_at: new Date(),
+        });
+        return { rows: [] };
+      }
+
+      if (s.startsWith('update oauth_authorization_codes set used_at')) {
+        const [code] = params as [string];
+        const now = new Date();
+        const existing = db.oauthCodes.find(c => c.code === code && c.used_at === null && c.expires_at > now);
+        if (!existing) return { rows: [] };
+        existing.used_at = now;
+        return { rows: [existing] };
+      }
+
+      // OAuth: oauth_access_tokens
+      if (s.startsWith('insert into oauth_access_tokens')) {
+        const [tokenHash, clientId, userId, scopes, expiresAt] =
+          params as [string, string, number, string[], Date];
+        const row: OAuthAccessTokenRecord = {
+          id: nextUuid(), token_hash: tokenHash, client_id: clientId, user_id: userId,
+          scopes, expires_at: expiresAt, revoked_at: null, created_at: new Date(),
+        };
+        db.oauthAccessTokens.push(row);
+        return { rows: [{ id: row.id }] };
+      }
+
+      if (s.startsWith('select t.user_id, t.client_id, t.scopes from oauth_access_tokens')) {
+        const [tokenHash] = params as [string];
+        const now = new Date();
+        const token = db.oauthAccessTokens.find(t => t.token_hash === tokenHash && t.revoked_at === null && t.expires_at > now);
+        if (!token) return { rows: [] };
+        return { rows: [{ user_id: token.user_id, client_id: token.client_id, scopes: token.scopes }] };
+      }
+
+      if (s.startsWith('update oauth_access_tokens set revoked_at') && s.includes('where token_hash')) {
+        const [tokenHash, clientId] = params as [string, string];
+        const t = db.oauthAccessTokens.find(t => t.token_hash === tokenHash && t.client_id === clientId);
+        if (t) t.revoked_at = new Date();
+        return { rows: [] };
+      }
+
+      if (s.includes('from oauth_access_tokens') && s.startsWith('update') && s.includes('where client_id')) {
+        const [clientId] = params as [string];
+        db.oauthAccessTokens.filter(t => t.client_id === clientId && t.revoked_at === null).forEach(t => { t.revoked_at = new Date(); });
+        return { rows: [] };
+      }
+
+      // OAuth: oauth_refresh_tokens (just no-op inserts/updates for basic test coverage)
+      if (s.startsWith('insert into oauth_refresh_tokens') || s.startsWith('update oauth_refresh_tokens') || s.startsWith('select user_id, scopes from oauth_refresh_tokens')) {
+        return { rows: [] };
+      }
+
+      // OAuth: oauth_consents
+      if (s.startsWith('insert into oauth_consents')) {
+        return { rows: [] };
+      }
+
+      if (s.includes('from oauth_consents') && s.startsWith('select')) {
+        const [userId] = params as [number];
+        return { rows: [] };
+      }
+
+      if (s.startsWith('update oauth_consents')) {
+        return { rows: [] };
+      }
+
       return { rows: [] };
     }),
   };
@@ -157,11 +301,25 @@ function makeRegularUser(): UserRecord {
   return user;
 }
 
+function makeOAuthClient(overrides: Partial<OAuthClientRecord> = {}): OAuthClientRecord {
+  const client: OAuthClientRecord = {
+    id: nextUuid(), user_id: null, name: 'Test App', client_id: 'test-client-id',
+    client_secret: null, is_public: true, redirect_uris: ['http://localhost'],
+    scopes: ['shorten:create', 'user:read'], created_at: new Date(), revoked_at: null,
+    ...overrides,
+  };
+  db.oauthClients.push(client);
+  return client;
+}
+
 beforeEach(() => {
   db.urls = [];
   db.users = [];
   db.nextUrlId = 1;
   db.nextUserId = 1;
+  db.oauthClients = [];
+  db.oauthCodes = [];
+  db.oauthAccessTokens = [];
   jest.clearAllMocks();
 });
 
@@ -475,5 +633,365 @@ describe('GET /api/openapi.json', () => {
         description: 'Configured API server',
       },
     ]);
+  });
+});
+
+// ============================================================================
+// OAuth 2.0 endpoint tests
+// ============================================================================
+
+describe('GET /oauth/authorize', () => {
+  it('returns 400 when client_id is missing', async () => {
+    const res = await request(app).get('/oauth/authorize?response_type=code&redirect_uri=http://localhost:3000/cb&scope=shorten:create');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for unknown client_id', async () => {
+    const res = await request(app).get('/oauth/authorize?response_type=code&client_id=unknown&redirect_uri=http://localhost:3000/cb&scope=shorten:create');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_client');
+  });
+
+  it('returns 400 for invalid redirect_uri not in client allowlist', async () => {
+    makeOAuthClient({ client_id: 'my-client', redirect_uris: ['https://example.com/cb'] });
+    const res = await request(app).get(
+      '/oauth/authorize?response_type=code&client_id=my-client&redirect_uri=https://evil.com/cb&scope=shorten:create',
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+  });
+});
+
+describe('POST /oauth/token', () => {
+  it('returns invalid_request for missing grant_type', async () => {
+    const res = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ client_id: 'test-client' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+  });
+
+  it('returns invalid_client for unknown client', async () => {
+    const res = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ grant_type: 'authorization_code', client_id: 'does-not-exist', code: 'abc', redirect_uri: 'http://localhost:3000/cb' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_client');
+  });
+
+  it('returns invalid_grant for unknown code', async () => {
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+    const res = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({
+        grant_type: 'authorization_code',
+        client_id: 'pub-client',
+        code: 'nonexistent-code',
+        redirect_uri: 'http://localhost:9999/cb',
+        code_verifier: 'dummyverifier',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_grant');
+  });
+
+  it('exchanges a valid authorization code for tokens (public client with PKCE)', async () => {
+    const user = makeRegularUser();
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+
+    const codeVerifier = 'averylongcodeverifierstring_thatisatleast43characters';
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    const redirectUri = 'http://localhost:9999/cb';
+
+    db.oauthCodes.push({
+      id: nextUuid(),
+      code: 'valid-code-123',
+      client_id: 'pub-client',
+      user_id: user.id,
+      redirect_uri: redirectUri,
+      scopes: ['shorten:create'],
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      used_at: null,
+      created_at: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({
+        grant_type: 'authorization_code',
+        client_id: 'pub-client',
+        code: 'valid-code-123',
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('access_token');
+    expect(res.body).toHaveProperty('refresh_token');
+    expect(res.body.token_type).toBe('Bearer');
+    expect(res.body.expires_in).toBe(900);
+    expect(res.body.scope).toBe('shorten:create');
+  });
+
+  it('rejects replay of an already-used authorization code', async () => {
+    const user = makeRegularUser();
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+
+    const codeVerifier = 'averylongcodeverifierstring_thatisatleast43characters';
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    const redirectUri = 'http://localhost:9999/cb';
+
+    db.oauthCodes.push({
+      id: nextUuid(),
+      code: 'one-time-code',
+      client_id: 'pub-client',
+      user_id: user.id,
+      redirect_uri: redirectUri,
+      scopes: ['shorten:create'],
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      used_at: null,
+      created_at: new Date(),
+    });
+
+    await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ grant_type: 'authorization_code', client_id: 'pub-client', code: 'one-time-code', redirect_uri: redirectUri, code_verifier: codeVerifier });
+
+    const replay = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ grant_type: 'authorization_code', client_id: 'pub-client', code: 'one-time-code', redirect_uri: redirectUri, code_verifier: codeVerifier });
+
+    expect(replay.status).toBe(400);
+    expect(replay.body.error).toBe('invalid_grant');
+  });
+
+  it('returns invalid_grant for wrong PKCE code_verifier', async () => {
+    const user = makeRegularUser();
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+
+    const codeVerifier = 'correctverifier_thatisatleast43characterslong____';
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+
+    db.oauthCodes.push({
+      id: nextUuid(),
+      code: 'pkce-code',
+      client_id: 'pub-client',
+      user_id: user.id,
+      redirect_uri: 'http://localhost:9999/cb',
+      scopes: ['shorten:create'],
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      used_at: null,
+      created_at: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({
+        grant_type: 'authorization_code',
+        client_id: 'pub-client',
+        code: 'pkce-code',
+        redirect_uri: 'http://localhost:9999/cb',
+        code_verifier: 'wrong-verifier-that-does-not-match-at-all-!!!',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_grant');
+  });
+});
+
+describe('POST /oauth/revoke', () => {
+  it('returns 200 even for unknown token (RFC 7009)', async () => {
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+    const res = await request(app)
+      .post('/oauth/revoke')
+      .type('form')
+      .send({ token: 'does-not-exist', client_id: 'pub-client' });
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 200 when missing required fields', async () => {
+    const res = await request(app).post('/oauth/revoke').type('form').send({ token: 'x' });
+    expect(res.status).toBe(200);
+  });
+
+  it('bypasses CSRF for revocation endpoint', async () => {
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+    const res = await request(app)
+      .post('/oauth/revoke')
+      .set('Origin', 'http://localhost:5173')
+      .type('form')
+      .send({ token: 'sometoken', client_id: 'pub-client' });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('OAuth Bearer token authentication', () => {
+  it('allows API shorten with a valid OAuth access token', async () => {
+    const user = makeRegularUser();
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+
+    const rawToken = 'raw-access-token-for-test';
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    db.oauthAccessTokens.push({
+      id: nextUuid(),
+      token_hash: tokenHash,
+      client_id: 'pub-client',
+      user_id: user.id,
+      scopes: ['shorten:create'],
+      expires_at: new Date(Date.now() + 15 * 60 * 1000),
+      revoked_at: null,
+      created_at: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${rawToken}`)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('falls back to API key auth when OAuth token lookup returns no rows', async () => {
+    makeAdminUser();
+    // admin-api-key-test is a legacy API key, not in oauth_access_tokens.
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', 'Bearer admin-api-key-test')
+      .send({ url: 'https://example.com', ttl: 'never' });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('GET /oauth/apps', () => {
+  it('returns 401 without authentication', async () => {
+    const res = await request(app).get('/oauth/apps');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns empty array when user has no consented apps', async () => {
+    makeAdminUser();
+    const res = await request(app)
+      .get('/oauth/apps')
+      .set('Authorization', 'Bearer admin-api-key-test');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('POST /oauth/apps', () => {
+  it('returns 401 without authentication', async () => {
+    const res = await request(app)
+      .post('/oauth/apps')
+      .send({ name: 'Test', redirectUris: ['https://example.com/cb'], scopes: ['shorten:create'], isPublic: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('registers a new confidential client for authenticated user', async () => {
+    makeAdminUser();
+    const res = await request(app)
+      .post('/oauth/apps')
+      .set('Authorization', 'Bearer admin-api-key-test')
+      .send({
+        name: 'My Integration',
+        redirectUris: ['https://myapp.com/callback'],
+        scopes: ['shorten:create'],
+        isPublic: false,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toHaveProperty('clientId');
+    expect(res.body).toHaveProperty('clientSecret');
+    expect(res.body.clientSecret).not.toBeNull();
+    expect(res.body.isPublic).toBe(false);
+  });
+
+  it('registers a new public client without a clientSecret', async () => {
+    makeAdminUser();
+    const res = await request(app)
+      .post('/oauth/apps')
+      .set('Authorization', 'Bearer admin-api-key-test')
+      .send({
+        name: 'My SPA',
+        redirectUris: ['https://myapp.com/callback'],
+        scopes: ['shorten:create', 'user:read'],
+        isPublic: true,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.clientSecret).toBeNull();
+    expect(res.body.isPublic).toBe(true);
+  });
+
+  it('returns 400 for invalid scope', async () => {
+    makeAdminUser();
+    const res = await request(app)
+      .post('/oauth/apps')
+      .set('Authorization', 'Bearer admin-api-key-test')
+      .send({
+        name: 'Bad App',
+        redirectUris: ['https://myapp.com/callback'],
+        scopes: ['invalid:scope'],
+        isPublic: false,
+      });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('DELETE /oauth/apps/:clientId', () => {
+  it('returns 401 without authentication', async () => {
+    makeOAuthClient({ client_id: 'some-client' });
+    const res = await request(app).delete('/oauth/apps/some-client');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for unknown client', async () => {
+    makeAdminUser();
+    const res = await request(app)
+      .delete('/oauth/apps/unknown-client-xyz')
+      .set('Authorization', 'Bearer admin-api-key-test');
+    expect(res.status).toBe(404);
+  });
+
+  it('allows owner to revoke own client', async () => {
+    const user = makeAdminUser();
+    makeOAuthClient({ client_id: 'owner-client', user_id: user.id });
+    const res = await request(app)
+      .delete('/oauth/apps/owner-client')
+      .set('Authorization', 'Bearer admin-api-key-test');
+    expect(res.status).toBe(200);
+  });
+
+  it('prevents non-owner non-admin from revoking another users client', async () => {
+    const owner = makeRegularUser();
+    makeOAuthClient({ client_id: 'owned-client', user_id: owner.id });
+    const attacker: UserRecord = { id: db.nextUserId++, github_id: 'attacker-gh', username: 'attacker', role: 'user', created_at: new Date(), api_key: 'attacker-key' };
+    db.users.push(attacker);
+    const res = await request(app)
+      .delete('/oauth/apps/owned-client')
+      .set('Authorization', 'Bearer attacker-key');
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('OAuth token endpoint bypasses CSRF', () => {
+  it('POST /oauth/token is not blocked by CSRF (returns non-403)', async () => {
+    const res = await request(app)
+      .post('/oauth/token')
+      .set('Origin', 'http://localhost:5173')
+      .type('form')
+      .send({ grant_type: 'authorization_code', client_id: 'x' });
+    expect(res.status).not.toBe(403);
   });
 });
