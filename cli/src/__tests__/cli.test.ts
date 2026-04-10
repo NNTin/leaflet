@@ -86,8 +86,6 @@ test('auth login stores the token after validating a non-admin token', async () 
     'login',
     '--token',
     'test-token',
-    '--server',
-    'http://localhost:3001',
     '--json',
   ], { homeDir, fetchStub });
 
@@ -101,7 +99,7 @@ test('auth login stores the token after validating a non-admin token', async () 
 
   const storedConfig = await readStoredConfig(homeDir);
   assert.equal(storedConfig.token, 'test-token');
-  assert.equal(storedConfig.server, 'http://localhost:3001');
+  assert.equal((storedConfig as Record<string, unknown>).server, undefined);
 });
 
 test('shorten accepts 60m, creates an anonymous session, and sends the CSRF cookie', async () => {
@@ -139,8 +137,8 @@ test('shorten accepts 60m, creates an anonymous session, and sends the CSRF cook
   assert.equal(payload.mode, 'anonymous');
 
   assert.equal(fetchStub.calls.length, 2);
-  assert.equal(fetchStub.calls[0].url, 'http://localhost:3001/auth/csrf-token');
-  assert.equal(fetchStub.calls[1].url, 'http://localhost:3001/api/shorten');
+  assert.equal(fetchStub.calls[0].url, 'https://leaflet.lair.nntin.xyz/auth/csrf-token');
+  assert.equal(fetchStub.calls[1].url, 'https://leaflet.lair.nntin.xyz/api/shorten');
   assert.equal(fetchStub.calls[1].init?.headers?.Cookie, 'connect.sid=test-session');
   assert.equal(fetchStub.calls[1].init?.headers?.['X-CSRF-Token'], 'csrf-value');
 
@@ -169,7 +167,7 @@ test('auth status reports anonymous mode when no token is configured', async () 
 test('auth status returns a structured error when the token is invalid', async () => {
   const homeDir = await makeTempHome();
   const configPath = getConfigPath(homeDir);
-  await fs.writeFile(configPath, `${JSON.stringify({ token: 'bad-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'bad-token' }, null, 2)}\n`, 'utf8');
 
   const fetchStub = createFetchStub([
     jsonResponse({ error: 'Authentication required.' }, { status: 401 }),
@@ -217,8 +215,6 @@ test('auth login rejects an invalid token and does not persist it', async () => 
     'login',
     '--token',
     'bad-token',
-    '--server',
-    'http://localhost:3001',
     '--json',
   ], { homeDir, fetchStub });
 
@@ -233,7 +229,7 @@ test('auth login rejects an invalid token and does not persist it', async () => 
   assert.equal(storedConfig.token, undefined);
 });
 
-test('auth login does not store the server when --server is not provided', async () => {
+test('auth login stores only token in local config', async () => {
   const homeDir = await makeTempHome();
   const fetchStub = createFetchStub([
     jsonResponse({ error: 'Admin access required.' }, { status: 403 }),
@@ -251,13 +247,13 @@ test('auth login does not store the server when --server is not provided', async
 
   const storedConfig = await readStoredConfig(homeDir);
   assert.equal(storedConfig.token, 'test-token');
-  assert.equal(storedConfig.server, undefined);
+  assert.equal((storedConfig as Record<string, unknown>).server, undefined);
 });
 
 test('auth logout removes the stored token and reports success', async () => {
   const homeDir = await makeTempHome();
   const configPath = getConfigPath(homeDir);
-  await fs.writeFile(configPath, `${JSON.stringify({ token: 'my-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'my-token' }, null, 2)}\n`, 'utf8');
 
   const fetchStub = createFetchStub([]);
 
@@ -282,7 +278,7 @@ test('auth logout removes the stored token and reports success', async () => {
 test('shorten with an authenticated token sends a Bearer header and skips CSRF', async () => {
   const homeDir = await makeTempHome();
   const configPath = getConfigPath(homeDir);
-  await fs.writeFile(configPath, `${JSON.stringify({ token: 'admin-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'admin-token' }, null, 2)}\n`, 'utf8');
 
   const fetchStub = createFetchStub([
     jsonResponse({
@@ -308,7 +304,7 @@ test('shorten with an authenticated token sends a Bearer header and skips CSRF',
   assert.equal(payload.mode, 'authenticated');
 
   assert.equal(fetchStub.calls.length, 1);
-  assert.equal(fetchStub.calls[0].url, 'http://localhost:3001/api/shorten');
+  assert.equal(fetchStub.calls[0].url, 'https://leaflet.lair.nntin.xyz/api/shorten');
   assert.equal(fetchStub.calls[0].init?.headers?.Authorization, 'Bearer admin-token');
   assert.equal(fetchStub.calls[0].init?.headers?.Cookie, undefined);
 
@@ -319,7 +315,7 @@ test('shorten with an authenticated token sends a Bearer header and skips CSRF',
 test('delete succeeds for a valid admin token and numeric id', async () => {
   const homeDir = await makeTempHome();
   const configPath = getConfigPath(homeDir);
-  await fs.writeFile(configPath, `${JSON.stringify({ token: 'admin-token', server: 'http://localhost:3001' }, null, 2)}\n`, 'utf8');
+  await fs.writeFile(configPath, `${JSON.stringify({ token: 'admin-token' }, null, 2)}\n`, 'utf8');
 
   const fetchStub = createFetchStub([
     jsonResponse({ message: 'URL deleted.' }, { status: 200 }),
@@ -339,7 +335,7 @@ test('delete succeeds for a valid admin token and numeric id', async () => {
   assert.equal(payload.id, 42);
 
   assert.equal(fetchStub.calls.length, 1);
-  assert.equal(fetchStub.calls[0].url, 'http://localhost:3001/admin/urls/42');
+  assert.equal(fetchStub.calls[0].url, 'https://leaflet.lair.nntin.xyz/admin/urls/42');
   assert.equal(fetchStub.calls[0].init?.method, 'DELETE');
   assert.equal(fetchStub.calls[0].init?.headers?.Authorization, 'Bearer admin-token');
 });

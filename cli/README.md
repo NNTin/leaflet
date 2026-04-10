@@ -29,10 +29,15 @@ npm install && npm run build --workspace cli && npm link --workspace cli
 
 The CLI resolves configuration in this order:
 
-1. Command flags
-2. Environment variables
-3. `~/.leafletrc`
-4. Built-in defaults
+1. Environment variables
+2. `~/.leafletrc`
+3. Built-in defaults
+
+The backend server URL is hardcoded to:
+
+```bash
+https://leaflet.lair.nntin.xyz
+```
 
 Stored config path:
 
@@ -44,7 +49,6 @@ Example config:
 
 ```json
 {
-  "server": "http://localhost:3001",
   "token": "your-api-token"
 }
 ```
@@ -53,7 +57,6 @@ Supported environment variables:
 
 | Purpose | Preferred | Also supported |
 | --- | --- | --- |
-| Base URL | `LEAFLET_BASE_URL` | `LEAFLET_API_BASE_URL`, `LEAFLET_SERVER` |
 | Token | `LEAFLET_TOKEN` | `LEAFLET_API_TOKEN`, `LEAFLET_API_KEY` |
 
 ## Authentication
@@ -91,7 +94,6 @@ Options:
 
 - `--ttl <ttl>`: `5m`, `60m`, `24h`, `never`
 - `--alias <alias>`: privileged/admin tokens only
-- `--server <url>`: override the backend URL
 - `--json`: machine-readable output
 - `--verbose`: progress logs to stderr
 - `--debug`: HTTP request and response logs to stderr
