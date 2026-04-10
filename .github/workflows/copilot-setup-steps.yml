@@ -9,20 +9,6 @@ permissions:
 jobs:
   copilot-setup-steps:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: leaflet
-          POSTGRES_PASSWORD: leaflet
-          POSTGRES_DB: leaflet
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U leaflet -d leaflet"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
       NODE_ENV: development
       PORT: 3001
@@ -45,10 +31,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
 
-      - name: Install PostgreSQL client
+      - name: Install and configure PostgreSQL
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql postgresql-client
+          sudo systemctl start postgresql
+
+          sudo -u postgres psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'leaflet') THEN
+              CREATE ROLE leaflet LOGIN PASSWORD 'leaflet';
+            ELSE
+              ALTER ROLE leaflet WITH LOGIN PASSWORD 'leaflet';
+            END IF;
+          END
+          $$;
+          SQL
+
+          if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = 'leaflet'" | grep -q 1; then
+            sudo -u postgres createdb -O leaflet leaflet
+          fi
 
       - name: Install dependencies
         run: npm ci
