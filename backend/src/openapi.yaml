@@ -6,7 +6,7 @@ info:
 
 servers:
   - url: http://localhost:3001
-    description: Local development server
+    description: Configured API server
 
 components:
   securitySchemes:
@@ -214,6 +214,26 @@ paths:
   /api/{code}:
     get:
       summary: Redirect to original URL
+      tags: [URLs]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Temporary redirect to the original URL
+        '404':
+          description: Short URL not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /s/{code}:
+    get:
+      summary: Canonical short-link redirect
       tags: [URLs]
       parameters:
         - name: code

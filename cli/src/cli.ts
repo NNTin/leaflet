@@ -10,7 +10,6 @@ type SharedOptions = {
   json?: boolean;
   verbose?: boolean;
   debug?: boolean;
-  server?: string;
 };
 
 type ShortenOptions = SharedOptions & {
@@ -84,8 +83,7 @@ function addSharedOptions(command: Command): Command {
   return command
     .option('--json', 'Output machine-readable JSON')
     .option('--verbose', 'Print additional command progress to stderr')
-    .option('--debug', 'Print HTTP request and response details to stderr')
-    .option('--server <url>', 'Leaflet backend base URL');
+    .option('--debug', 'Print HTTP request and response details to stderr');
 }
 
 function createOutput(options: SharedOptions | LogoutOptions, runtime: CliRuntime): Output {
@@ -390,7 +388,6 @@ async function handleShorten(urlValue: string, options: ShortenOptions, runtime:
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
-    server: options.server,
   });
   const client = new LeafletApiClient(runtime.fetchImpl, output);
 
@@ -459,7 +456,6 @@ async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): 
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
-    server: options.server,
   });
   const token = options.token.trim();
 
@@ -484,7 +480,6 @@ async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): 
 
   const configPath = await writeStoredConfig({
     ...storedConfig,
-    ...(resolvedConfig.serverSource === 'flag' ? { server: resolvedConfig.server } : {}),
     token,
   }, runtime.homeDir);
 
@@ -542,7 +537,6 @@ async function handleAuthStatus(options: SharedOptions, runtime: CliRuntime): Pr
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
-    server: options.server,
   });
 
   if (!resolvedConfig.token) {
@@ -593,7 +587,6 @@ async function handleDelete(idValue: string, options: DeleteOptions, runtime: Cl
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
-    server: options.server,
   });
 
   if (!resolvedConfig.token) {
@@ -686,7 +679,6 @@ Examples:
       .addHelpText('after', `
 Examples:
   leaflet-cli auth login --token <API_TOKEN>
-  leaflet-cli auth login --token <API_TOKEN> --server=http://localhost:3001
 `)
   ).action(async (options: AuthLoginOptions) => {
     await handleAuthLogin(options, runtime);

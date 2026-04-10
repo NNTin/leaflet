@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_API_ORIGIN?: string
+  readonly VITE_BASE_PATH?: string
+}
+
 // CSS Modules
 declare module '*.module.css' {
   const classes: Record<string, string>;

@@ -132,6 +132,11 @@ jest.mock('../shortcode', () => ({
   generateShortCode: jest.fn(async () => 'testcode'),
 }));
 
+process.env.ALLOWED_FRONTEND_ORIGINS = 'http://localhost:5173,https://nntin.xyz,https://leaflet.lair.nntin.xyz';
+process.env.PUBLIC_SHORT_URL_BASE = 'https://leaflet.lair.nntin.xyz/s';
+process.env.PUBLIC_API_ORIGIN = 'https://leaflet.lair.nntin.xyz';
+process.env.DEFAULT_FRONTEND_URL = 'http://localhost:5173';
+
 import app from '../app';
 
 function makeAdminUser(): UserRecord {
@@ -192,6 +197,38 @@ describe('POST /api/shorten - anonymous rate limiting', () => {
     const second = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
     expect(second.status).toBe(429);
   });
+
+  it('allows one request per anonymous session even when sessions share the same IP', async () => {
+    const ip = '10.99.1.2';
+    const body = { url: 'https://example.com', ttl: '24h' };
+
+    const agentOne = request.agent(app);
+    const csrfOne = (await agentOne.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const first = await agentOne.post('/api/shorten').set('X-CSRF-Token', csrfOne).set('X-Forwarded-For', ip).send(body);
+    expect(first.status).toBe(201);
+
+    const agentTwo = request.agent(app);
+    const csrfTwo = (await agentTwo.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const second = await agentTwo.post('/api/shorten').set('X-CSRF-Token', csrfTwo).set('X-Forwarded-For', ip).send(body);
+    expect(second.status).toBe(201);
+  });
+
+  it('applies an IP guardrail across multiple anonymous sessions from the same IP', async () => {
+    const ip = '10.99.1.3';
+    const body = { url: 'https://example.com', ttl: '24h' };
+
+    for (let index = 0; index < 10; index += 1) {
+      const agent = request.agent(app);
+      const csrf = (await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+      const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+      expect(res.status).toBe(201);
+    }
+
+    const overflowAgent = request.agent(app);
+    const overflowCsrf = (await overflowAgent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const overflow = await overflowAgent.post('/api/shorten').set('X-CSRF-Token', overflowCsrf).set('X-Forwarded-For', ip).send(body);
+    expect(overflow.status).toBe(429);
+  });
 });
 
 describe('GET /api/:code - redirect contract', () => {
@@ -211,6 +248,22 @@ describe('GET /api/:code - redirect contract', () => {
 
   it('returns 404 JSON for non-existent short code', async () => {
     const res = await request(app).get('/api/doesnotexist');
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error');
+  });
+});
+
+describe('GET /s/:code - canonical redirect contract', () => {
+  it('returns 302 to original URL for active short code', async () => {
+    db.urls.push({ id: 1, short_code: 'active1', original_url: 'https://example.com', expires_at: new Date(Date.now() + 86400000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/s/active1').redirects(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('https://example.com');
+  });
+
+  it('returns 404 JSON for expired short code', async () => {
+    db.urls.push({ id: 2, short_code: 'expired1', original_url: 'https://example.com', expires_at: new Date(Date.now() - 1000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/s/expired1');
     expect(res.status).toBe(404);
     expect(res.body).toHaveProperty('error');
   });
@@ -295,13 +348,13 @@ describe('POST /api/shorten - role enforcement', () => {
 });
 
 describe('POST /api/shorten - shortUrl shape', () => {
-  it('returns shortUrl with /s/ prefix, not /api/', async () => {
+  it('returns the canonical backend shortUrl with /s/ prefix, not /api/', async () => {
     const ip = '10.99.4.1';
     const agent = request.agent(app);
     const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip);
     const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrfRes.body.csrfToken as string).set('X-Forwarded-For', ip).send({ url: 'https://example.com', ttl: '24h' });
     expect(res.status).toBe(201);
-    expect(res.body.shortUrl).toMatch(/\/s\//);
+    expect(res.body.shortUrl).toBe('https://leaflet.lair.nntin.xyz/s/testcode');
     expect(res.body.shortUrl).not.toMatch(/\/api\//);
   });
 });
@@ -363,19 +416,36 @@ describe('CSRF protection', () => {
     expect([201, 429]).toContain(res.status);
   });
 
-  it('accepts requests from the exact frontend origin without a CSRF token', async () => {
+  it('rejects allowed frontend origins without a CSRF token', async () => {
     const res = await request(app)
       .post('/api/shorten')
       .set('Origin', 'http://localhost:5173')
       .send({ url: 'https://example.com', ttl: '24h' });
 
-    expect([201, 429]).toContain(res.status);
+    expect(res.status).toBe(403);
   });
 
-  it('rejects prefix-matching origins that are not the frontend origin', async () => {
-    const res = await request(app)
+  it('accepts valid X-CSRF-Token from an allowed frontend origin', async () => {
+    const ip = '10.99.5.2';
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip);
+    const res = await agent
+      .post('/api/shorten')
+      .set('Origin', 'http://localhost:5173')
+      .set('X-CSRF-Token', csrfRes.body.csrfToken as string)
+      .set('X-Forwarded-For', ip)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects prefix-matching origins that are not the frontend origin even with a CSRF token', async () => {
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', '10.99.5.3');
+    const res = await agent
       .post('/api/shorten')
       .set('Origin', 'http://localhost:5173.evil.test')
+      .set('X-CSRF-Token', csrfRes.body.csrfToken as string)
       .send({ url: 'https://example.com', ttl: '24h' });
 
     expect(res.status).toBe(403);
@@ -394,5 +464,16 @@ describe('GET /api/openapi.json', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('openapi');
     expect(res.body).toHaveProperty('paths');
+  });
+
+  it('uses PUBLIC_API_ORIGIN for the served server URL', async () => {
+    const res = await request(app).get('/api/openapi.json');
+    expect(res.status).toBe(200);
+    expect(res.body.servers).toEqual([
+      {
+        url: 'https://leaflet.lair.nntin.xyz',
+        description: 'Configured API server',
+      },
+    ]);
   });
 });

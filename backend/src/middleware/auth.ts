@@ -11,6 +11,7 @@ async function resolveApiKeyUser(req: Request): Promise<boolean> {
     const result = await pool.query('SELECT * FROM users WHERE api_key = $1', [apiKey]);
     if (result.rows.length === 0) return false;
     req.user = result.rows[0] as User;
+    req.apiKeyAuthenticated = true;
     return true;
   } catch {
     return false;

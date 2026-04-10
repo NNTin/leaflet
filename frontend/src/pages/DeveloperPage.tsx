@@ -1,10 +1,12 @@
 import SwaggerUI from 'swagger-ui-react'
 import 'swagger-ui-react/swagger-ui.css'
 import Navbar from '../components/Navbar'
+import { apiUrl } from '../urls'
 import styles from './DeveloperPage.module.css'
 
 export default function DeveloperPage() {
-  const apiBase = window.location.origin
+  const apiBase = new URL(apiUrl(''), window.location.origin).toString().replace(/\/$/, '')
+  const openApiUrl = apiUrl('/openapi.json')
 
   return (
     <div className={styles.page}>
@@ -16,12 +18,12 @@ export default function DeveloperPage() {
           <p className={styles.description}>
             Leaflet exposes a simple REST API for creating and managing short
             links programmatically. All endpoints are under{' '}
-            <code className={styles.code}>{apiBase}/api</code>.
+            <code className={styles.code}>{apiBase}</code>.
           </p>
           <div className={styles.infoRow}>
             <div className={styles.infoCard}>
               <span className={styles.infoLabel}>Base URL</span>
-              <code className={styles.infoValue}>{apiBase}/api</code>
+              <code className={styles.infoValue}>{apiBase}</code>
             </div>
             <div className={styles.infoCard}>
               <span className={styles.infoLabel}>Authentication</span>
@@ -36,7 +38,7 @@ export default function DeveloperPage() {
 
         <div className={`card ${styles.swaggerCard}`}>
           <SwaggerUI
-            url="/api/openapi.json"
+            url={openApiUrl}
             docExpansion="list"
             defaultModelsExpandDepth={-1}
           />

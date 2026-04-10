@@ -2,27 +2,11 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import Navbar from '../components/Navbar'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { csrfHeaders } from '../api'
+import { adminUrl, authUrl, shortUrl } from '../urls'
 import styles from './AdminPage.module.css'
 
-const adminApi = axios.create({ withCredentials: true })
-
-let csrfCache: string | null = null
-
-async function getCsrf(): Promise<string> {
-  if (csrfCache) return csrfCache
-  try {
-    const res = await axios.get<{ csrfToken?: string; token?: string }>('/auth/csrf-token', { withCredentials: true })
-    csrfCache = res.data?.csrfToken ?? res.data?.token ?? ''
-  } catch {
-    csrfCache = ''
-  }
-  return csrfCache
-}
-
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getCsrf()
-  return token ? { 'X-CSRF-Token': token } : {}
-}
+const adminApi = axios.create({ baseURL: adminUrl(''), withCredentials: true })
 
 interface User {
   id: number;
@@ -57,7 +41,7 @@ export default function AdminPage() {
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
-    axios.get<User>('/auth/me', { withCredentials: true })
+    axios.get<User | null>(authUrl('/me'), { withCredentials: true })
       .then(res => setUser(res.data))
       .catch(() => setUser(null))
       .finally(() => setAuthLoading(false))
@@ -73,7 +57,7 @@ export default function AdminPage() {
     setLinksLoading(true)
     setLinksError('')
     try {
-      const res = await adminApi.get<LinkItem[] | { urls: LinkItem[] }>('/admin/urls')
+      const res = await adminApi.get<LinkItem[] | { urls: LinkItem[] }>('/urls')
       setLinks(Array.isArray(res.data) ? res.data : res.data.urls ?? [])
     } catch (err) {
       setLinksError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load links.' : 'Failed to load links.')
@@ -86,7 +70,7 @@ export default function AdminPage() {
     setUsersLoading(true)
     setUsersError('')
     try {
-      const res = await adminApi.get<User[] | { users: User[] }>('/admin/users')
+      const res = await adminApi.get<User[] | { users: User[] }>('/users')
       setUsers(Array.isArray(res.data) ? res.data : res.data.users ?? [])
     } catch (err) {
       setUsersError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load users.' : 'Failed to load users.')
@@ -103,12 +87,11 @@ export default function AdminPage() {
   async function deleteLink(id: number) {
     clearMessages()
     try {
-      const headers = await authHeaders()
-      await adminApi.delete(`/admin/urls/${id}`, { headers })
+      const headers = await csrfHeaders()
+      await adminApi.delete(`/urls/${id}`, { headers })
       setLinks(prev => prev.filter(l => l.id !== id))
       setActionMsg('Link deleted.')
     } catch (err) {
-      csrfCache = null
       setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to delete link.' : 'Failed to delete link.')
     }
   }
@@ -116,12 +99,11 @@ export default function AdminPage() {
   async function setUserRole(userId: number, role: string) {
     clearMessages()
     try {
-      const headers = await authHeaders()
-      await adminApi.patch(`/admin/users/${userId}/role`, { role }, { headers })
+      const headers = await csrfHeaders()
+      await adminApi.patch(`/users/${userId}/role`, { role }, { headers })
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
       setActionMsg(`User role updated to "${role}".`)
     } catch (err) {
-      csrfCache = null
       setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to update user role.' : 'Failed to update user role.')
     }
   }
@@ -203,7 +185,7 @@ export default function AdminPage() {
                       <tr key={link.id}>
                         <td>
                           <a
-                            href={`/s/${link.shortCode}`}
+                            href={shortUrl(link.shortCode)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={styles.codeLink}
