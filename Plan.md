@@ -138,8 +138,8 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 - [x] Add or update the GitHub Actions workflow for the Leaflet frontend build in `https://github.com/NNTin/leaflet`.
 - [x] Build from `frontend` in the Leaflet repository.
 - [x] Create a GitHub Actions Pages pipeline that builds the frontend and publishes the Vite `dist` output to an orphaned GitHub Pages branch, for example `gh-pages`.
-- [ ] Ensure the Pages branch contains only the generated frontend output and required static files, not source files or secrets.
-- [ ] After creating the pipeline and orphaned Pages branch setup, pause implementation and ask for operator input so GitHub Pages can be enabled in GitHub settings.
+- [x] Ensure the Pages branch contains only the generated frontend output and required static files, not source files or secrets.
+- [x] After creating the pipeline and orphaned Pages branch setup, pause implementation and ask for operator input so GitHub Pages can be enabled in GitHub settings.
 - [ ] Resume validation only after the operator confirms GitHub Pages has been enabled for the orphaned Pages branch.
 - [ ] Confirm the published page resolves at `https://nntin.xyz/leaflet/`.
 - [ ] Confirm direct reloads work for:
@@ -152,7 +152,7 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 
 - [x] Keep the Traefik and backend configuration targeted at `leaflet.lair.nntin.xyz`.
 - [x] Do not perform live Traefik/DNS validation in this implementation pass.
-- [ ] If Cloudflare-backed DNS/certificate automation is needed for config rendering, read the Cloudflare token from `projects/leaflet/.env` without exposing or committing it.
+- [x] If Cloudflare-backed DNS/certificate automation is needed for config rendering, read the Cloudflare token from `projects/leaflet/.env` without exposing or committing it.
 - [x] Leave final DNS resolution and Let's Encrypt certificate issuance validation to the operator/deployment environment.
 - [x] Document that no DNS or Traefik change is expected for `nntin.xyz/leaflet/` beyond the existing GitHub Pages CNAME setup.
 
