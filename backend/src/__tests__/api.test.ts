@@ -197,6 +197,38 @@ describe('POST /api/shorten - anonymous rate limiting', () => {
     const second = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
     expect(second.status).toBe(429);
   });
+
+  it('allows one request per anonymous session even when sessions share the same IP', async () => {
+    const ip = '10.99.1.2';
+    const body = { url: 'https://example.com', ttl: '24h' };
+
+    const agentOne = request.agent(app);
+    const csrfOne = (await agentOne.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const first = await agentOne.post('/api/shorten').set('X-CSRF-Token', csrfOne).set('X-Forwarded-For', ip).send(body);
+    expect(first.status).toBe(201);
+
+    const agentTwo = request.agent(app);
+    const csrfTwo = (await agentTwo.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const second = await agentTwo.post('/api/shorten').set('X-CSRF-Token', csrfTwo).set('X-Forwarded-For', ip).send(body);
+    expect(second.status).toBe(201);
+  });
+
+  it('applies an IP guardrail across multiple anonymous sessions from the same IP', async () => {
+    const ip = '10.99.1.3';
+    const body = { url: 'https://example.com', ttl: '24h' };
+
+    for (let index = 0; index < 10; index += 1) {
+      const agent = request.agent(app);
+      const csrf = (await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+      const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+      expect(res.status).toBe(201);
+    }
+
+    const overflowAgent = request.agent(app);
+    const overflowCsrf = (await overflowAgent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const overflow = await overflowAgent.post('/api/shorten').set('X-CSRF-Token', overflowCsrf).set('X-Forwarded-For', ip).send(body);
+    expect(overflow.status).toBe(429);
+  });
 });
 
 describe('GET /api/:code - redirect contract', () => {

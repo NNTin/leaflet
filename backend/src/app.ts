@@ -18,8 +18,10 @@ import urlRoutes, { redirectShortCode } from './routes/urls';
 import adminRoutes from './routes/admin';
 import { isAllowedFrontendOrigin, publicApiOrigin } from './config';
 
-const ANON_SHORTEN_WINDOW_MS = 60 * 1000;
-const ANON_SHORTEN_MAX = 1;
+const ANON_SESSION_WINDOW_MS = 60 * 1000;
+const ANON_SESSION_MAX = 1;
+const ANON_IP_GUARD_WINDOW_MS = 60 * 1000;
+const ANON_IP_GUARD_MAX = 10;
 const GLOBAL_API_WINDOW_MS = 15 * 60 * 1000;
 const GLOBAL_API_MAX = 300;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
@@ -153,14 +155,33 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.status(403).json({ error: 'CSRF validation failed.' });
 });
 
-// Anonymous rate limiter: skip for session-auth or validated API key users
-const anonymousRateLimiter = rateLimit({
-  windowMs: ANON_SHORTEN_WINDOW_MS,
-  max: ANON_SHORTEN_MAX,
+// Anonymous per-session limiter: each anonymous browser session gets its own bucket.
+const anonymousSessionRateLimiter = rateLimit({
+  windowMs: ANON_SESSION_WINDOW_MS,
+  max: ANON_SESSION_MAX,
   skip: (req: Request) => req.isAuthenticated() || !!req.user,
+  keyGenerator: (req: Request) => {
+    if (req.sessionID) {
+      return `anon-session:${req.sessionID}`;
+    }
+
+    // Fallback in case a session id is unavailable.
+    return `anon-ip-fallback:${req.ip}`;
+  },
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please log in or wait before trying again.' },
+});
+
+// Anonymous IP guardrail: caps aggregate anonymous traffic per source IP.
+const anonymousIpGuardRateLimiter = rateLimit({
+  windowMs: ANON_IP_GUARD_WINDOW_MS,
+  max: ANON_IP_GUARD_MAX,
+  skip: (req: Request) => req.isAuthenticated() || !!req.user,
+  keyGenerator: (req: Request) => `anon-ip:${req.ip}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many anonymous requests from this IP. Please log in or wait before trying again.' },
 });
 
 const authRateLimiter = rateLimit({
@@ -199,7 +220,8 @@ if (swaggerDocument) {
   app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
 }
 
-app.use('/api/shorten', anonymousRateLimiter);
+app.use('/api/shorten', anonymousSessionRateLimiter);
+app.use('/api/shorten', anonymousIpGuardRateLimiter);
 app.use('/auth', authRateLimiter);
 app.use('/admin', adminRateLimiter);
 
