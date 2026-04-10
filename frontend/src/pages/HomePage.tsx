@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import Navbar from '../components/Navbar'
 import api from '../api'
+import { authUrl } from '../urls'
 import styles from './HomePage.module.css'
 
 interface TtlOption {
@@ -39,7 +40,7 @@ export default function HomePage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    api.get<User>('/auth/me', { baseURL: '' })
+    axios.get<User | null>(authUrl('/me'), { withCredentials: true })
       .then(res => setUser(res.data))
       .catch(() => setUser(null))
   }, [])

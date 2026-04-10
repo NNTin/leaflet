@@ -1,4 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
+import { csrfHeaders } from '../api'
+import { authUrl } from '../urls'
 import styles from './Navbar.module.css'
 
 interface NavbarUser {
@@ -18,7 +20,8 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
     if (onLogout) {
       onLogout()
     } else {
-      fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+      csrfHeaders()
+        .then(headers => fetch(authUrl('/logout'), { method: 'POST', credentials: 'include', headers }))
         .finally(() => navigate('/'))
     }
   }
@@ -55,7 +58,7 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
               </button>
             </div>
           ) : (
-            <a href="/auth/github" className="btn btn-primary btn-sm">
+            <a href={authUrl('/github', window.location.href)} className="btn btn-primary btn-sm">
               Login with GitHub
             </a>
           )}

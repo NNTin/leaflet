@@ -98,16 +98,16 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
 
 ### 4. Make the frontend deployable at both base paths
 
-- [ ] Add a Vite base path controlled by env, for example `base: process.env.VITE_BASE_PATH ?? "/"`.
-- [ ] Configure React Router `BrowserRouter` with a basename derived from the Vite base path.
-- [ ] Add a central frontend URL helper, for example `frontend/src/urls.ts`, for backend URLs and base-path aware app URLs.
-- [ ] The helper should expose `apiUrl(path)`, `authUrl(path, returnTo?)`, `adminUrl(path)`, `apiDocsUrl()`, and `appUrl(path)` or equivalent helpers.
-- [ ] Configure backend URL helpers with:
+- [x] Add a Vite base path controlled by env, for example `base: process.env.VITE_BASE_PATH ?? "/"`.
+- [x] Configure React Router `BrowserRouter` with a basename derived from the Vite base path.
+- [x] Add a central frontend URL helper, for example `frontend/src/urls.ts`, for backend URLs and base-path aware app URLs.
+- [x] The helper should expose `apiUrl(path)`, `authUrl(path, returnTo?)`, `adminUrl(path)`, `apiDocsUrl()`, and `appUrl(path)` or equivalent helpers.
+- [x] Configure backend URL helpers with:
 
   - `VITE_API_ORIGIN=""` for the Docker/subdomain build so calls stay same-origin.
   - `VITE_API_ORIGIN="https://leaflet.lair.nntin.xyz"` for the GitHub Pages build.
 
-- [ ] Replace hard-coded frontend calls to `/api`, `/auth`, `/admin`, and `/api-docs` with that helper in:
+- [x] Replace hard-coded frontend calls to `/api`, `/auth`, `/admin`, and `/api-docs` with that helper in:
 
   - `frontend/src/api.ts`
   - `frontend/src/components/Navbar.tsx`
@@ -116,21 +116,21 @@ Current backend code uses `FRONTEND_URL` for several different concerns. Split t
   - `frontend/src/pages/DeveloperPage.tsx`
   - `frontend/src/pages/RedirectPage.tsx`
 
-- [ ] Update `frontend/src/api.ts` so both the Axios `baseURL` and CSRF token fetch use the helper and `withCredentials: true`.
-- [ ] Update `frontend/src/components/Navbar.tsx` so GitHub login uses `authUrl('/github', returnTo)` and logout uses the helper instead of a raw `/auth/logout` fetch.
-- [ ] Update `frontend/src/pages/DeveloperPage.tsx` so the displayed API base and Swagger spec URL use `VITE_API_ORIGIN`/`apiUrl('/openapi.json')` instead of `window.location.origin`.
-- [ ] Keep `frontend/src/pages/RedirectPage.tsx` only as a compatibility route if desired; if it remains, make it hand off to the backend `/s/:code` URL instead of implementing canonical short-link redirects in the SPA.
-- [ ] Fix admin table short-code links so they point to the canonical backend short URL, for example `https://leaflet.lair.nntin.xyz/s/<code>`, not the GitHub Pages SPA route.
-- [ ] Keep the Docker frontend build at base `/` for `https://leaflet.lair.nntin.xyz`.
-- [ ] Build the GitHub Pages frontend with:
+- [x] Update `frontend/src/api.ts` so both the Axios `baseURL` and CSRF token fetch use the helper and `withCredentials: true`.
+- [x] Update `frontend/src/components/Navbar.tsx` so GitHub login uses `authUrl('/github', returnTo)` and logout uses the helper instead of a raw `/auth/logout` fetch.
+- [x] Update `frontend/src/pages/DeveloperPage.tsx` so the displayed API base and Swagger spec URL use `VITE_API_ORIGIN`/`apiUrl('/openapi.json')` instead of `window.location.origin`.
+- [x] Keep `frontend/src/pages/RedirectPage.tsx` only as a compatibility route if desired; if it remains, make it hand off to the backend `/s/:code` URL instead of implementing canonical short-link redirects in the SPA.
+- [x] Fix admin table short-code links so they point to the canonical backend short URL, for example `https://leaflet.lair.nntin.xyz/s/<code>`, not the GitHub Pages SPA route.
+- [x] Keep the Docker frontend build at base `/` for `https://leaflet.lair.nntin.xyz`.
+- [x] Build the GitHub Pages frontend with:
 
   ```env
   VITE_BASE_PATH=/leaflet/
   VITE_API_ORIGIN=https://leaflet.lair.nntin.xyz
   ```
 
-- [ ] Add a GitHub Pages SPA fallback by copying `dist/index.html` to `dist/404.html`, or choose another explicit fallback strategy, so direct visits to `/leaflet/admin` and `/leaflet/developer` load the React app.
-- [ ] Do not depend on the GitHub Pages SPA fallback for canonical short-link redirects; those must be served by the backend `/s/:code` route.
+- [x] Add a GitHub Pages SPA fallback by copying `dist/index.html` to `dist/404.html`, or choose another explicit fallback strategy, so direct visits to `/leaflet/admin` and `/leaflet/developer` load the React app.
+- [x] Do not depend on the GitHub Pages SPA fallback for canonical short-link redirects; those must be served by the backend `/s/:code` route.
 
 ### 5. Configure GitHub Pages deployment
 
