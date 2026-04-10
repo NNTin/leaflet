@@ -41,7 +41,6 @@ A privacy-first, self-hosted URL shortener with expiring links, admin controls, 
 
 2. **Create GitHub OAuth App**
    - Go to https://github.com/settings/applications/new
-   - Set local callback URL to `http://localhost:3001/auth/github/callback`
    - Set production callback URL to `https://leaflet.lair.nntin.xyz/auth/github/callback`
    - Copy Client ID and Client Secret
 
