@@ -64,7 +64,7 @@ router.get('/urls', requireScope('urls:read'), requireAdmin, async (req: Request
 router.get('/users', requireScope('users:read'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query(
-      'SELECT id, github_id, username, role, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id, username, role, created_at FROM users ORDER BY created_at DESC'
     );
     res.json((result.rows as UserRow[]).map(toUserDto));
   } catch (err) {

@@ -221,6 +221,10 @@ function makeAppleVerifyCallback() {
 
 export const REGISTERED_PROVIDERS: ProviderName[] = [];
 
+export function listRegisteredProviders(): ProviderName[] {
+  return [...REGISTERED_PROVIDERS];
+}
+
 interface ProviderConfig {
   name: ProviderName;
   register: () => void;
@@ -290,22 +294,22 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   {
     name: 'discord',
     register() {
-      const clientID = process.env.DISCORD_CLIENT_ID;
+      const clientId = process.env.DISCORD_CLIENT_ID;
       const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-      if (!clientID || !clientSecret) {
+      if (!clientId || !clientSecret) {
         console.warn(
           '[auth] Discord provider not configured (missing DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET).',
         );
         return;
       }
-      const callbackURL =
+      const callbackUrl =
         process.env.DISCORD_CALLBACK_URL || `${BASE_URL}/auth/discord/callback`;
       passport.use(
         new DiscordStrategy(
           {
-            clientID,
+            clientId,
             clientSecret,
-            callbackURL,
+            callbackUrl,
             scope: ['identify', 'email'],
             passReqToCallback: true,
           },
@@ -350,7 +354,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
       const clientID = process.env.APPLE_CLIENT_ID;
       const teamID = process.env.APPLE_TEAM_ID;
       const keyID = process.env.APPLE_KEY_ID;
-      const privateKeyString = process.env.APPLE_PRIVATE_KEY;
+      const privateKeyString = process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
       if (!clientID || !teamID || !keyID || !privateKeyString) {
         console.warn(
           '[auth] Apple provider not configured ' +

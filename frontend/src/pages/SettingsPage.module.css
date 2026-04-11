@@ -111,12 +111,51 @@
   flex-shrink: 0;
 }
 
+.conflictBox {
+  background: #fff8e8;
+  border: 1px solid #f0d18c;
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  color: #6f4d10;
+  margin-bottom: 1rem;
+}
+
+.conflictTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+  color: #6f4d10;
+}
+
+.conflictText {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.conflictActions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+}
+
 .error {
   background: #fff3f3;
   border: 1px solid #f5c6c6;
   border-radius: var(--radius);
   padding: 0.9rem 1.1rem;
   color: #c0392b;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.success {
+  background: #eef9f0;
+  border: 1px solid #b7dec0;
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  color: #237241;
   font-size: 0.9rem;
   margin-bottom: 1.5rem;
 }

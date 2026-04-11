@@ -23,23 +23,23 @@ declare module 'passport-discord' {
   }
 
   export interface StrategyOptions {
-    clientID: string;
+    clientId: string;
     clientSecret: string;
-    callbackURL: string;
+    callbackUrl: string;
     scope?: string[];
-    authorizationURL?: string;
-    tokenURL?: string;
+    authorizationUrl?: string;
+    tokenUrl?: string;
     scopeSeparator?: string;
     passReqToCallback?: false;
   }
 
   export interface StrategyOptionsWithRequest {
-    clientID: string;
+    clientId: string;
     clientSecret: string;
-    callbackURL: string;
+    callbackUrl: string;
     scope?: string[];
-    authorizationURL?: string;
-    tokenURL?: string;
+    authorizationUrl?: string;
+    tokenUrl?: string;
     scopeSeparator?: string;
     passReqToCallback: true;
   }

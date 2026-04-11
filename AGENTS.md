@@ -111,6 +111,7 @@ Helpful files:
 Known-good verification commands:
 
 ```bash
+npm run build --workspace backend
 npm run test --workspace backend
 npm run test --workspace cli
 npm run build --workspace cli
@@ -134,6 +135,12 @@ When changing auth behavior, cover at least:
 - session browser behavior without OAuth scope requirements
 - CSRF enforcement on session mutation routes
 
+When changing auth providers or generated OpenAPI, also cover at least:
+
+- `GET /api/openapi.json` returns `200`
+- the served spec includes `/auth/{provider}` and `/auth/{provider}/callback`
+- `npm run build --workspace backend` still writes `backend/dist/openapi.json`
+
 ## Docker And Local Browser Notes
 
 The checked-in Docker setup is production-shaped, not local-dev-shaped.
@@ -150,6 +157,10 @@ Standard rebuild flow:
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=80 backend frontend postgres
+npm run build --workspace backend
+npm run test --workspace backend
+npm run test --workspace cli
+npm run build --workspace cli
 ```
 
 For Docker-only smoke tests, run from inside the Docker network instead of relying on host ports.
@@ -157,6 +168,7 @@ For Docker-only smoke tests, run from inside the Docker network instead of relyi
 - From inside `leaflet-backend-1`, the backend is `http://localhost:3001`.
 - From inside `leaflet-backend-1`, the frontend is reachable as `http://leaflet-frontend-1/` over `lair-network`.
 - If you need host-accessible ports for manual browser work, use a temporary override file that adds `ports`.
+- Running `docker compose exec -T backend node - <<'NODE' ... NODE` is a reliable way to smoke-test from inside the Docker network without assuming extra tools are installed in the container.
 
 Important production-cookie caveat:
 
@@ -213,7 +225,7 @@ Recent local browser validation covered:
 - successful shorten flow
 - non-admin denial on admin UI routes
 
-The deployed site at `https://nntin.xyz/leaflet/` was smoke-checked as a baseline only. If you need to validate a new change there, commit and push first, then wait for GitHub Pages propagation.
+The deployed site at `https://nntin.xyz/leaflet/` was smoke-checked as a baseline only. If you need to validate a new change there and your current working branch is main, commit and push first, then wait for GitHub Pages propagation.
 
 ## Documentation Caveat
 

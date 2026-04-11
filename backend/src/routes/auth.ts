@@ -4,7 +4,7 @@ import { User } from '../models/user';
 import { ProviderName, listIdentitiesForUser, deleteIdentity, countIdentitiesForUser } from '../models/identity';
 import { addAuthFailureParam, defaultFrontendUrl, resolveOAuthReturnTo } from '../config';
 import { ensureScopeForOAuthRequest, requireAuth } from '../middleware/auth';
-import { isProviderRegistered } from '../providers/registry';
+import { isProviderRegistered, listRegisteredProviders } from '../providers/registry';
 
 const router = express.Router();
 
@@ -20,6 +20,15 @@ function consumeOAuthReturnTo(req: Request): string {
 
 const VALID_PROVIDERS: ProviderName[] = ['github', 'google', 'discord', 'microsoft', 'apple'];
 
+/** Human-readable labels for each known provider. */
+const PROVIDER_LABELS: Record<ProviderName, string> = {
+  github: 'GitHub',
+  google: 'Google',
+  discord: 'Discord',
+  microsoft: 'Microsoft',
+  apple: 'Apple',
+};
+
 function isValidProvider(value: string): value is ProviderName {
   return (VALID_PROVIDERS as string[]).includes(value);
 }
@@ -34,6 +43,18 @@ function getAuthOptions(provider: ProviderName): object {
 // ---------------------------------------------------------------------------
 // NOTE: Specific routes MUST be registered before wildcard /:provider routes.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// GET /auth/providers  –  List currently configured OAuth providers
+// ---------------------------------------------------------------------------
+
+router.get('/providers', (_req: Request, res: Response) => {
+  const providers = listRegisteredProviders().map((name) => ({
+    name,
+    label: PROVIDER_LABELS[name],
+  }));
+  res.json(providers);
+});
 
 // ---------------------------------------------------------------------------
 // GET /auth/me

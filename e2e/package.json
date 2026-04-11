@@ -1,0 +1,15 @@
+{
+  "name": "leaflet-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end integration tests for backend + frontend + CLI",
+  "scripts": {
+    "test": "playwright test",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "@types/node": "^20.0.0"
+  }
+}

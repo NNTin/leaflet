@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+backend/node_modules
+frontend/node_modules
+cli/node_modules
+e2e/node_modules
+backend/dist
+frontend/dist
+cli/dist
+e2e/test-results
+e2e/playwright-report
+npm-debug.log*
+.env
+.env.*

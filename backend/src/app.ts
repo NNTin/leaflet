@@ -5,12 +5,11 @@ import session from 'express-session';
 import passport from 'passport';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
-import YAML from 'yamljs';
 import swaggerUi from 'swagger-ui-express';
-import path from 'path';
 import pool from './db';
 import { User } from './models/user';
 import { lookupAccessTokenWithUser } from './oauth/tokens';
+import baseSpec from './openapi';
 
 import './passport';
 
@@ -266,6 +265,7 @@ const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication requests. Please try again later.' },
+  skip: () => process.env.E2E_TEST_MODE === 'true',
 });
 
 const adminRateLimiter = rateLimit({
@@ -276,25 +276,18 @@ const adminRateLimiter = rateLimit({
   message: { error: 'Too many admin requests. Please try again later.' },
 });
 
-let swaggerDocument: Record<string, unknown> | undefined;
-try {
-  swaggerDocument = YAML.load(path.join(__dirname, 'openapi.yaml')) as Record<string, unknown>;
-} catch (err) {
-  console.warn('Could not load OpenAPI spec:', (err as Error).message);
-}
+const { servers: _servers, ...baseSpecWithoutServers } = baseSpec;
+const swaggerDocument = {
+  ...baseSpecWithoutServers,
+  servers: [
+    {
+      url: publicApiOrigin,
+      description: 'Configured API server',
+    },
+  ],
+};
 
-if (swaggerDocument) {
-  swaggerDocument = {
-    ...swaggerDocument,
-    servers: [
-      {
-        url: publicApiOrigin,
-        description: 'Configured API server',
-      },
-    ],
-  };
-  app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
-}
+app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
 
 app.use('/api/shorten', anonymousSessionRateLimiter);
 app.use('/api/shorten', anonymousIpGuardRateLimiter);
@@ -308,9 +301,15 @@ app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
 app.use('/oauth', oauthRoutes);
 
-if (swaggerDocument) {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+if (process.env.E2E_TEST_MODE === 'true') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e2eRoutes = require('./routes/e2e').default as express.Router;
+  // Mount on /e2e (not /auth) to avoid the /auth rate limiter in tests.
+  app.use('/e2e', e2eRoutes);
+  console.warn('[E2E] Test-only /e2e routes are active — do not use in production.');
 }
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);

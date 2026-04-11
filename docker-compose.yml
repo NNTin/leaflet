@@ -36,8 +36,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     expose:
       - "3001"
     environment:
@@ -50,6 +50,20 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID is required}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET is required}
       GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:?GITHUB_CALLBACK_URL is required}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_CALLBACK_URL: ${DISCORD_CALLBACK_URL:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_CALLBACK_URL: ${MICROSOFT_CALLBACK_URL:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_CALLBACK_URL: ${APPLE_CALLBACK_URL:-}
       ADMIN_GITHUB_IDS: ${ADMIN_GITHUB_IDS:?ADMIN_GITHUB_IDS is required}
       ALLOWED_FRONTEND_ORIGINS: ${ALLOWED_FRONTEND_ORIGINS:-https://nntin.xyz,https://leaflet.lair.nntin.xyz}
       PUBLIC_SHORT_URL_BASE: ${PUBLIC_SHORT_URL_BASE:-https://leaflet.lair.nntin.xyz/s}
@@ -84,8 +98,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     expose:
       - "80"
     networks:
