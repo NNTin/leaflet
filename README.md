@@ -172,7 +172,11 @@ See [cli/README.md](cli/README.md) for command details and JSON output examples.
 
 ## API Reference
 
-See the interactive API playground at `/developer` or the OpenAPI spec at `/api/openapi.json`.
+See the interactive API playground at `/api-docs` or the OpenAPI spec at `/api/openapi.json`.
+
+> **Note:** The OpenAPI spec is generated automatically from `backend/src/openapi.ts`.
+> To update the spec, edit that file.
+> Run `npm run build --workspace backend` to regenerate `dist/openapi.json`.
 
 ### Auth Endpoints
 

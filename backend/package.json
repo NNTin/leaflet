@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
-    "build": "tsc && node scripts/copy-openapi.js",
+    "build": "tsc && node scripts/generate-openapi.js",
     "dev": "ts-node src/server.ts",
     "lint": "tsc --noEmit",
     "migrate": "sh -c 'for migration in migrations/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$migration\"; done'",

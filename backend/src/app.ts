@@ -5,12 +5,11 @@ import session from 'express-session';
 import passport from 'passport';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
-import YAML from 'yamljs';
 import swaggerUi from 'swagger-ui-express';
-import path from 'path';
 import pool from './db';
 import { User } from './models/user';
 import { lookupAccessTokenWithUser } from './oauth/tokens';
+import baseSpec from './openapi';
 
 import './passport';
 
@@ -276,25 +275,18 @@ const adminRateLimiter = rateLimit({
   message: { error: 'Too many admin requests. Please try again later.' },
 });
 
-let swaggerDocument: Record<string, unknown> | undefined;
-try {
-  swaggerDocument = YAML.load(path.join(__dirname, 'openapi.yaml')) as Record<string, unknown>;
-} catch (err) {
-  console.warn('Could not load OpenAPI spec:', (err as Error).message);
-}
+const { servers: _servers, ...baseSpecWithoutServers } = baseSpec;
+const swaggerDocument = {
+  ...baseSpecWithoutServers,
+  servers: [
+    {
+      url: publicApiOrigin,
+      description: 'Configured API server',
+    },
+  ],
+};
 
-if (swaggerDocument) {
-  swaggerDocument = {
-    ...swaggerDocument,
-    servers: [
-      {
-        url: publicApiOrigin,
-        description: 'Configured API server',
-      },
-    ],
-  };
-  app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
-}
+app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
 
 app.use('/api/shorten', anonymousSessionRateLimiter);
 app.use('/api/shorten', anonymousIpGuardRateLimiter);
@@ -308,9 +300,7 @@ app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
 app.use('/oauth', oauthRoutes);
 
-if (swaggerDocument) {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-}
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);

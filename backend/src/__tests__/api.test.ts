@@ -5,9 +5,8 @@
  */
 
 import request from 'supertest';
-import path from 'path';
 import crypto from 'crypto';
-import YAML from 'yamljs';
+import baseSpec from '../openapi';
 
 interface UrlRecord {
   id: number;
@@ -693,39 +692,30 @@ beforeEach(async () => {
 
 describe('OpenAPI TTL enum contract', () => {
   it('has enum values matching backend TTL_MAP keys', () => {
-    const spec = YAML.load(path.join(__dirname, '../openapi.yaml')) as {
-      paths: { '/api/shorten': { post: { requestBody: { content: { 'application/json': { schema: { properties: { ttl: { enum: string[] } } } } } } } } };
-    };
-    const ttlEnum = spec.paths['/api/shorten'].post.requestBody.content['application/json'].schema.properties.ttl.enum;
+    const ttlEnum = (
+      baseSpec.paths['/api/shorten'].post as {
+        requestBody: { content: { 'application/json': { schema: { properties: { ttl: { enum: string[] } } } } } };
+      }
+    ).requestBody.content['application/json'].schema.properties.ttl.enum;
     expect(ttlEnum.sort()).toEqual(['24h', '1h', '5m', 'never'].sort());
   });
 
   it('does not contain deprecated 60m value', () => {
-    const spec = YAML.load(path.join(__dirname, '../openapi.yaml')) as {
-      paths: { '/api/shorten': { post: { requestBody: { content: { 'application/json': { schema: { properties: { ttl: { enum: string[] } } } } } } } } };
-    };
-    const ttlEnum = spec.paths['/api/shorten'].post.requestBody.content['application/json'].schema.properties.ttl.enum;
+    const ttlEnum = (
+      baseSpec.paths['/api/shorten'].post as {
+        requestBody: { content: { 'application/json': { schema: { properties: { ttl: { enum: string[] } } } } } };
+      }
+    ).requestBody.content['application/json'].schema.properties.ttl.enum;
     expect(ttlEnum).not.toContain('60m');
   });
 
   it('documents provider callback error responses', () => {
-    const spec = YAML.load(path.join(__dirname, '../openapi.yaml')) as {
-      paths: {
-        '/auth/{provider}/callback': {
-          get: {
-            responses: Record<string, unknown>;
-          };
-        };
-        '/auth/apple/callback': {
-          post: {
-            responses: Record<string, unknown>;
-          };
-        };
-      };
-    };
-
-    const callbackResponses = spec.paths['/auth/{provider}/callback'].get.responses;
-    const appleCallbackResponses = spec.paths['/auth/apple/callback'].post.responses;
+    const callbackResponses = (
+      baseSpec.paths['/auth/{provider}/callback'].get as { responses: Record<string, unknown> }
+    ).responses;
+    const appleCallbackResponses = (
+      baseSpec.paths['/auth/apple/callback'].post as { responses: Record<string, unknown> }
+    ).responses;
 
     expect(callbackResponses).toHaveProperty('400');
     expect(callbackResponses).toHaveProperty('405');
@@ -1107,6 +1097,40 @@ describe('GET /api/openapi.json', () => {
         description: 'Configured API server',
       },
     ]);
+  });
+
+  it('spec version is 3.0.3', async () => {
+    const res = await request(app).get('/api/openapi.json');
+    expect(res.body.openapi).toBe('3.0.3');
+  });
+
+  it('includes key route paths', async () => {
+    const res = await request(app).get('/api/openapi.json');
+    const paths: string[] = Object.keys(res.body.paths as Record<string, unknown>);
+    expect(paths).toContain('/auth/me');
+    expect(paths).toContain('/api/shorten');
+    expect(paths).toContain('/api/urls');
+    expect(paths).toContain('/admin/users');
+    expect(paths).toContain('/admin/urls/{id}');
+    expect(paths).toContain('/oauth/apps');
+    expect(paths).toContain('/oauth/token');
+    expect(paths).toContain('/s/{code}');
+  });
+
+  it('includes both security schemes', async () => {
+    const res = await request(app).get('/api/openapi.json');
+    const schemes: Record<string, unknown> = res.body.components.securitySchemes as Record<string, unknown>;
+    expect(schemes).toHaveProperty('sessionCookie');
+    expect(schemes).toHaveProperty('BearerAuth');
+  });
+
+  it('reflects the generated spec (openapi.ts is the source of truth)', async () => {
+    const res = await request(app).get('/api/openapi.json');
+    expect(res.body.info.title).toBe(baseSpec.info.title);
+    expect(res.body.info.version).toBe(baseSpec.info.version);
+    expect(Object.keys(res.body.paths as Record<string, unknown>).sort()).toEqual(
+      Object.keys(baseSpec.paths).sort(),
+    );
   });
 });
 
