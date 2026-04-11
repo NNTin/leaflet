@@ -1,9 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
-import crypto from 'crypto';
-import pool from '../db';
 import { User } from '../models/user';
 import { addAuthFailureParam, defaultFrontendUrl, resolveOAuthReturnTo } from '../config';
+import { ensureScopeForOAuthRequest } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -45,10 +44,27 @@ router.get(
 );
 
 router.get('/me', (req: Request, res: Response) => {
+  if (req.oauthTokenRejected) {
+    res.status(401).json({ error: 'Invalid or expired bearer token.' });
+    return;
+  }
+
+  if (req.oauthAuthenticated) {
+    if (!ensureScopeForOAuthRequest(req, res, 'user:read')) {
+      return;
+    }
+
+    const { id, username, role, created_at } = req.user as User;
+    res.json({ id, username, role, created_at, scopes: req.oauthScopes ?? [] });
+    return;
+  }
+
   if (req.isAuthenticated()) {
     const { id, username, role, created_at } = req.user as User;
-    return res.json({ id, username, role, created_at });
+    res.json({ id, username, role, created_at });
+    return;
   }
+
   res.json(null);
 });
 
@@ -61,24 +77,6 @@ router.post('/logout', (req: Request, res: Response, next: NextFunction) => {
       res.json({ message: 'Logged out successfully' });
     });
   });
-});
-
-router.get('/api-key', async (req: Request, res: Response, next: NextFunction) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: 'Authentication required. Please log in via GitHub OAuth first.' });
-  }
-  try {
-    const user = req.user as User;
-    let { api_key } = user;
-    if (!api_key) {
-      api_key = crypto.randomBytes(32).toString('hex');
-      await pool.query('UPDATE users SET api_key = $1 WHERE id = $2', [api_key, user.id]);
-      (req.user as User).api_key = api_key;
-    }
-    res.json({ apiKey: api_key });
-  } catch (err) {
-    next(err);
-  }
 });
 
 export default router;

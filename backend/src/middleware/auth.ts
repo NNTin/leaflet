@@ -1,58 +1,110 @@
 import { Request, Response, NextFunction } from 'express';
-import pool from '../db';
 import { User } from '../models/user';
 
-async function resolveApiKeyUser(req: Request): Promise<boolean> {
-  const authHeader = req.headers.authorization ?? '';
-  if (!authHeader.startsWith('Bearer ')) return false;
-  const apiKey = authHeader.slice(7).trim();
-  if (!apiKey) return false;
-  try {
-    const result = await pool.query('SELECT * FROM users WHERE api_key = $1', [apiKey]);
-    if (result.rows.length === 0) return false;
-    req.user = result.rows[0] as User;
-    req.apiKeyAuthenticated = true;
-    return true;
-  } catch {
-    return false;
+function isAuthenticatedRequest(req: Request): boolean {
+  return req.isAuthenticated() || req.oauthAuthenticated === true;
+}
+
+function isSessionAuthenticated(req: Request): boolean {
+  return req.oauthAuthenticated !== true && req.isAuthenticated();
+}
+
+function respondUnauthorized(req: Request, res: Response): void {
+  if (req.oauthTokenRejected) {
+    res.status(401).json({ error: 'Invalid or expired bearer token.' });
+    return;
   }
+
+  res.status(401).json({ error: 'Authentication required.' });
+}
+
+function respondInsufficientScope(res: Response, scope: string): void {
+  res.status(403).json({
+    error: 'Insufficient scope.',
+    requiredScope: scope,
+    hint: `Re-authenticate requesting the '${scope}' scope.`,
+  });
+}
+
+function oauthRequestHasScope(req: Request, scope: string): boolean {
+  const scopes = req.oauthScopes ?? [];
+  return scopes.includes('admin:*') || scopes.includes(scope);
+}
+
+export function ensureScopeForOAuthRequest(req: Request, res: Response, scope: string): boolean {
+  if (!req.oauthAuthenticated) return true;
+  if (oauthRequestHasScope(req, scope)) return true;
+
+  respondInsufficientScope(res, scope);
+  return false;
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.isAuthenticated()) return next();
-  if (await resolveApiKeyUser(req)) return next();
-  res.status(401).json({ error: 'Authentication required.' });
+  if (isAuthenticatedRequest(req)) {
+    next();
+    return;
+  }
+
+  respondUnauthorized(req, res);
 }
 
 /**
- * Optional auth: if a Bearer token is present, resolve the API key user.
- * Does NOT block the request if unauthenticated – allows anonymous access.
+ * Optional OAuth Bearer auth for endpoints that still allow anonymous access.
+ * Invalid Bearer tokens are rejected with 401 rather than silently treated as anonymous.
  */
-export async function optionalApiKeyAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.isAuthenticated()) {
-    const authHeader = req.headers.authorization ?? '';
-    if (authHeader.startsWith('Bearer ')) {
-      await resolveApiKeyUser(req);
-    }
+export async function optionalBearerAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (req.oauthTokenRejected) {
+    respondUnauthorized(req, res);
+    return;
   }
+
   next();
 }
 
-export async function requirePrivileged(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.isAuthenticated() || await resolveApiKeyUser(req)) {
-    const role = req.user && (req.user as User).role;
-    if (role === 'privileged' || role === 'admin') return next();
-    res.status(403).json({ error: 'Privileged account required.' });
-    return;
-  }
-  res.status(401).json({ error: 'Authentication required.' });
+function requireRole(roles: Array<User['role']>, message: string) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!isAuthenticatedRequest(req)) {
+      respondUnauthorized(req, res);
+      return;
+    }
+
+    const role = (req.user as User | undefined)?.role;
+    if (role && roles.includes(role)) {
+      next();
+      return;
+    }
+
+    res.status(403).json({ error: message });
+  };
 }
 
-export async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (req.isAuthenticated() || await resolveApiKeyUser(req)) {
-    if (req.user && (req.user as User).role === 'admin') return next();
-    res.status(403).json({ error: 'Admin access required.' });
-    return;
-  }
-  res.status(401).json({ error: 'Authentication required.' });
+export const requirePrivileged = requireRole(
+  ['privileged', 'admin'],
+  'Privileged account required.',
+);
+
+export const requireAdmin = requireRole(
+  ['admin'],
+  'Admin access required.',
+);
+
+export function requireScope(scope: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (isSessionAuthenticated(req)) {
+      next();
+      return;
+    }
+
+    if (req.oauthAuthenticated) {
+      if (oauthRequestHasScope(req, scope)) {
+        next();
+        return;
+      }
+
+      respondInsufficientScope(res, scope);
+      return;
+    }
+
+    respondUnauthorized(req, res);
+  };
 }

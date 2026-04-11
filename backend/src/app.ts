@@ -10,12 +10,14 @@ import swaggerUi from 'swagger-ui-express';
 import path from 'path';
 import pool from './db';
 import { User } from './models/user';
+import { lookupAccessTokenWithUser } from './oauth/tokens';
 
 import './passport';
 
 import authRoutes from './routes/auth';
 import urlRoutes, { redirectShortCode } from './routes/urls';
 import adminRoutes from './routes/admin';
+import oauthRoutes from './routes/oauth';
 import { isAllowedFrontendOrigin, publicApiOrigin } from './config';
 
 const ANON_SESSION_WINDOW_MS = 60 * 1000;
@@ -30,6 +32,12 @@ const ADMIN_WINDOW_MS = 60 * 1000;
 const ADMIN_MAX = 60;
 
 const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * OAuth machine-to-machine endpoints that must be exempt from CSRF.
+ * These endpoints authenticate via client credentials, not browser sessions.
+ */
+const OAUTH_CSRF_EXEMPT_PATHS = new Set(['/oauth/token', '/oauth/revoke']);
 
 const app = express();
 
@@ -47,6 +55,9 @@ const corsOptions: CorsOptions = {
 app.use(cors(corsOptions));
 
 app.use(express.json());
+// Required for OAuth /token, /revoke endpoints (form-encoded bodies)
+// and the consent form submission.
+app.use(express.urlencoded({ extended: false }));
 
 interface SessionOptions extends session.SessionOptions {
   store?: session.Store;
@@ -64,22 +75,27 @@ const sessionOptions: SessionOptions = {
   },
 };
 
-if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const connectPgSimple = require('connect-pg-simple')(session);
-  sessionOptions.store = new connectPgSimple({
-    pool,
-    tableName: 'session',
-    createTableIfMissing: true,
-  });
-}
+export const sessionStore: session.Store = (() => {
+  if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const connectPgSimple = require('connect-pg-simple')(session);
+    return new connectPgSimple({
+      pool,
+      tableName: 'session',
+      createTableIfMissing: true,
+    });
+  }
+
+  return new session.MemoryStore();
+})();
+
+sessionOptions.store = sessionStore;
 
 app.use(session(sessionOptions));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Global rate limiter applied to all routes — runs before any auth or DB lookups
-// to prevent abuse of middleware-level database queries (e.g. API key lookup).
+// Global rate limiter applied to all routes — runs before any auth or DB lookups.
 const globalRateLimiter = rateLimit({
   windowMs: GLOBAL_API_WINDOW_MS,
   max: GLOBAL_API_MAX,
@@ -90,29 +106,51 @@ const globalRateLimiter = rateLimit({
 
 app.use(globalRateLimiter);
 
-// Early middleware: resolve API key user before CSRF check so that
+// Early middleware: resolve OAuth Bearer tokens before CSRF check so that
 // CSRF bypass and rate limit skip use a validated user, not raw headers.
-// The global rate limiter above ensures this DB lookup is rate-limited.
-async function earlyApiKeyMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-  req.apiKeyAuthenticated = false;
+async function earlyBearerAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+  req.oauthAuthenticated = false;
+  req.oauthTokenRejected = false;
+  req.oauthClientId = undefined;
+  req.oauthScopes = undefined;
+
   if (req.isAuthenticated()) return next();
+
   const authHeader = req.headers.authorization ?? '';
   if (!authHeader.startsWith('Bearer ')) return next();
-  const apiKey = authHeader.slice(7).trim();
-  if (!apiKey) return next();
-  try {
-    const result = await pool.query('SELECT * FROM users WHERE api_key = $1', [apiKey]);
-    if (result.rows.length > 0) {
-      req.user = result.rows[0] as User;
-      req.apiKeyAuthenticated = true;
-    }
-  } catch {
-    // Treat as unauthenticated
+
+  const rawToken = authHeader.slice(7).trim();
+  if (!rawToken) {
+    req.oauthTokenRejected = true;
+    return next();
   }
+
+  try {
+    const accessToken = await lookupAccessTokenWithUser(rawToken);
+    if (!accessToken) {
+      req.oauthTokenRejected = true;
+      return next();
+    }
+
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [accessToken.userId]);
+    if (userResult.rows.length === 0) {
+      req.oauthTokenRejected = true;
+      return next();
+    }
+
+    req.user = userResult.rows[0] as User;
+    req.oauthAuthenticated = true;
+    req.oauthClientId = accessToken.clientId;
+    req.oauthScopes = accessToken.scopes;
+  } catch (err) {
+    next(err as Error);
+    return;
+  }
+
   next();
 }
 
-app.use(earlyApiKeyMiddleware);
+app.use(earlyBearerAuthMiddleware);
 
 app.get('/auth/csrf-token', (req: Request, res: Response) => {
   if (!req.session.csrfToken) {
@@ -124,9 +162,28 @@ app.get('/auth/csrf-token', (req: Request, res: Response) => {
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (CSRF_SAFE_METHODS.has(req.method)) return next();
 
-  // API key (Bearer token) requests are not cookie-based so CSRF does not apply.
-  // req.user is set by earlyApiKeyMiddleware, ensuring the token was validated.
-  if (req.apiKeyAuthenticated) return next();
+  // OAuth token requests are not cookie-based so CSRF does not apply.
+  if (req.oauthAuthenticated) return next();
+
+  // OAuth machine-to-machine endpoints authenticate via client credentials.
+  if (OAUTH_CSRF_EXEMPT_PATHS.has(req.path)) return next();
+
+  // OAuth consent form POST: validate the CSRF token submitted as a hidden form
+  // field (_csrf). The form is served from the backend origin (not a frontend
+  // origin), so origin-based checks cannot be applied here.
+  if (req.path === '/oauth/authorize/consent') {
+    const sessionToken = req.session?.csrfToken;
+    const bodyToken = typeof req.body?._csrf === 'string' ? (req.body._csrf as string) : undefined;
+    if (
+      sessionToken &&
+      bodyToken &&
+      sessionToken.length === bodyToken.length &&
+      crypto.timingSafeEqual(Buffer.from(sessionToken), Buffer.from(bodyToken))
+    ) {
+      return next();
+    }
+    return res.status(403).json({ error: 'CSRF validation failed.' });
+  }
 
   const requestOrigin = (() => {
     const rawOrigin = req.headers.origin ?? req.headers.referer ?? '';
@@ -140,6 +197,16 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
   if (requestOrigin === null || (requestOrigin && !isAllowedFrontendOrigin(requestOrigin))) {
     return res.status(403).json({ error: 'CSRF validation failed.' });
+  }
+
+  // Programmatic requests (no Origin header) without an active session are not
+  // subject to CSRF attacks: browsers always include an Origin header on cross-site
+  // POST requests, so an absent Origin means the request is either same-site or
+  // from a non-browser client (CLI, server). If there is no active session, CSRF
+  // cannot be exploited — any endpoint that requires authentication will still
+  // reject the request with 401 via requireAuth downstream.
+  if (!requestOrigin && !req.isAuthenticated()) {
+    return next();
   }
 
   const sessionToken = req.session?.csrfToken;
@@ -229,6 +296,7 @@ app.use('/auth', authRoutes);
 app.get('/s/:code', redirectShortCode);
 app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
+app.use('/oauth', oauthRoutes);
 
 if (swaggerDocument) {
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));

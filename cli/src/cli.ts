@@ -2,9 +2,20 @@ import os from 'os';
 import { Command, CommanderError } from 'commander';
 import fetch from 'node-fetch';
 import { CliError } from './errors';
-import { getConfigPath, readStoredConfig, resolveConfig, writeStoredConfig } from './config';
+import { getConfigPath, readStoredConfig, resolveConfig, writeStoredConfig, StoredConfig } from './config';
 import { ApiResult, FetchLike, LeafletApiClient } from './http';
 import { CommandHelp, Output } from './output';
+import {
+  computeCodeChallenge,
+  exchangeCodeForTokens,
+  generateCodeVerifier,
+  generateState,
+  isTokenExpiringSoon,
+  openBrowser,
+  refreshAccessToken,
+  startCallbackServer,
+  StoredOAuth,
+} from './oauth';
 
 type SharedOptions = {
   json?: boolean;
@@ -18,7 +29,8 @@ type ShortenOptions = SharedOptions & {
 };
 
 type AuthLoginOptions = SharedOptions & {
-  token: string;
+  /** Client ID for the OAuth PKCE flow (defaults to the built-in leaflet-cli client). */
+  clientId?: string;
 };
 
 type DeleteOptions = SharedOptions;
@@ -30,12 +42,24 @@ type LogoutOptions = {
 
 type AuthStatus = 'admin' | 'authenticated' | 'anonymous';
 
+type OAuthDeps = {
+  computeCodeChallenge: typeof computeCodeChallenge;
+  exchangeCodeForTokens: typeof exchangeCodeForTokens;
+  generateCodeVerifier: typeof generateCodeVerifier;
+  generateState: typeof generateState;
+  isTokenExpiringSoon: typeof isTokenExpiringSoon;
+  openBrowser: typeof openBrowser;
+  refreshAccessToken: typeof refreshAccessToken;
+  startCallbackServer: typeof startCallbackServer;
+};
+
 export interface CliRuntime {
   env: NodeJS.ProcessEnv;
   homeDir: string;
   fetchImpl: FetchLike;
   writeOut: (chunk: string) => void;
   writeErr: (chunk: string) => void;
+  oauthDeps?: Partial<OAuthDeps>;
 }
 
 const ROOT_HELP: CommandHelp = {
@@ -50,8 +74,8 @@ const HELP_BY_COMMAND: Record<string, CommandHelp> = {
     example: 'leaflet-cli shorten https://example.com --ttl=60m',
   },
   'auth login': {
-    usage: 'leaflet-cli auth login --token <API_TOKEN> [options]',
-    example: 'leaflet-cli auth login --token ghp_exampletoken',
+    usage: 'leaflet-cli auth login [options]',
+    example: 'leaflet-cli auth login',
   },
   'auth logout': {
     usage: 'leaflet-cli auth logout [options]',
@@ -69,6 +93,17 @@ const HELP_BY_COMMAND: Record<string, CommandHelp> = {
 
 const ALIAS_PATTERN = /^[a-zA-Z0-9-_]{3,50}$/;
 
+const defaultOAuthDeps: OAuthDeps = {
+  computeCodeChallenge,
+  exchangeCodeForTokens,
+  generateCodeVerifier,
+  generateState,
+  isTokenExpiringSoon,
+  openBrowser,
+  refreshAccessToken,
+  startCallbackServer,
+};
+
 function createDefaultRuntime(): CliRuntime {
   return {
     env: process.env,
@@ -76,6 +111,13 @@ function createDefaultRuntime(): CliRuntime {
     fetchImpl: fetch,
     writeOut: (chunk) => process.stdout.write(chunk),
     writeErr: (chunk) => process.stderr.write(chunk),
+  };
+}
+
+function resolveOAuthDeps(runtime: CliRuntime): OAuthDeps {
+  return {
+    ...defaultOAuthDeps,
+    ...(runtime.oauthDeps ?? {}),
   };
 }
 
@@ -255,6 +297,14 @@ function getResponseErrorMessage(result: ApiResult<Record<string, unknown>>): st
   return `Server responded with status ${result.status}.`;
 }
 
+function getResponseHint(result: ApiResult<Record<string, unknown>>): string | null {
+  if (typeof result.body === 'object' && result.body && typeof result.body.hint === 'string') {
+    return result.body.hint;
+  }
+
+  return null;
+}
+
 function ensureShortenBody(result: ApiResult<Record<string, unknown>>): {
   shortCode: string;
   shortUrl: string;
@@ -284,6 +334,7 @@ function mapShortenError(result: ApiResult<Record<string, unknown>>, context: {
   ttl: '5m' | '60m' | '24h' | 'never';
 }): CliError {
   const message = getResponseErrorMessage(result);
+  const hint = getResponseHint(result);
 
   if (result.status === 400) {
     return new CliError(message, {
@@ -293,10 +344,18 @@ function mapShortenError(result: ApiResult<Record<string, unknown>>, context: {
     });
   }
 
+  if (result.status === 401) {
+    return new CliError(message, {
+      hint: "Run 'leaflet-cli auth login' again or unset LEAFLET_TOKEN before retrying.",
+      usage: HELP_BY_COMMAND.shorten.usage,
+      example: HELP_BY_COMMAND.shorten.example,
+    });
+  }
+
   if (result.status === 403) {
-    if (message === 'CSRF validation failed.' && context.token) {
-      return new CliError('The configured token was rejected by the server.', {
-        hint: "Run 'leaflet-cli auth login --token <API_TOKEN>' with a fresh token or unset the token environment variable.",
+    if (hint) {
+      return new CliError(message, {
+        hint,
         usage: HELP_BY_COMMAND.shorten.usage,
         example: HELP_BY_COMMAND.shorten.example,
       });
@@ -304,22 +363,22 @@ function mapShortenError(result: ApiResult<Record<string, unknown>>, context: {
 
     if (context.alias) {
       return new CliError(message, {
-        hint: 'Remove --alias or authenticate with a privileged or admin token.',
+        hint: "Remove --alias or authenticate with a privileged/admin account via 'leaflet-cli auth login'.",
         usage: HELP_BY_COMMAND.shorten.usage,
-        example: 'leaflet-cli auth login --token <API_TOKEN>',
+        example: 'leaflet-cli auth login',
       });
     }
 
     if (context.ttl === 'never') {
       return new CliError(message, {
-        hint: 'Use an admin token or choose 5m, 60m, or 24h instead.',
+        hint: "Use an admin OAuth token with the required scope, or choose 5m, 60m, or 24h instead.",
         usage: HELP_BY_COMMAND.shorten.usage,
         example: HELP_BY_COMMAND.shorten.example,
       });
     }
 
     return new CliError(message, {
-      hint: 'Retry with a valid token or run without authentication for anonymous mode.',
+      hint: "Retry with valid OAuth credentials or run without authentication for anonymous mode.",
       usage: HELP_BY_COMMAND.shorten.usage,
       example: HELP_BY_COMMAND.shorten.example,
     });
@@ -335,9 +394,9 @@ function mapShortenError(result: ApiResult<Record<string, unknown>>, context: {
 
   if (result.status === 429) {
     return new CliError(message, {
-      hint: 'Anonymous requests are limited to one request per minute. Wait a minute or authenticate with a token.',
+      hint: "Anonymous requests are limited to one request per minute. Wait a minute or authenticate with 'leaflet-cli auth login'.",
       usage: HELP_BY_COMMAND.shorten.usage,
-      example: 'leaflet-cli auth login --token <API_TOKEN>',
+      example: 'leaflet-cli auth login',
     });
   }
 
@@ -350,10 +409,11 @@ function mapShortenError(result: ApiResult<Record<string, unknown>>, context: {
 
 function mapDeleteError(result: ApiResult<Record<string, unknown>>): CliError {
   const message = getResponseErrorMessage(result);
+  const hint = getResponseHint(result);
 
   if (result.status === 401) {
     return new CliError(message, {
-      hint: "Run 'leaflet-cli auth login --token <API_TOKEN>' with an admin token before deleting links.",
+      hint: "Run 'leaflet-cli auth login' again or unset LEAFLET_TOKEN before deleting links.",
       usage: HELP_BY_COMMAND.delete.usage,
       example: HELP_BY_COMMAND.delete.example,
     });
@@ -361,7 +421,7 @@ function mapDeleteError(result: ApiResult<Record<string, unknown>>): CliError {
 
   if (result.status === 403) {
     return new CliError(message, {
-      hint: 'Deleting links requires an admin token.',
+      hint: hint ?? "Deleting links requires an admin OAuth token with the 'urls:delete' scope.",
       usage: HELP_BY_COMMAND.delete.usage,
       example: HELP_BY_COMMAND.delete.example,
     });
@@ -382,9 +442,53 @@ function mapDeleteError(result: ApiResult<Record<string, unknown>>): CliError {
   });
 }
 
+/**
+ * If a stored OAuth token is present and expiring soon, attempt to refresh it
+ * silently and persist the new token pair. Returns the updated config.
+ * Failures are non-fatal: if refresh fails the caller will get a 401 error later.
+ */
+async function maybeRefreshOAuthToken(
+  storedConfig: StoredConfig,
+  homeDir: string,
+  output: Output,
+  oauthDeps: OAuthDeps,
+  server: string,
+): Promise<StoredConfig> {
+  if (!storedConfig.oauth) return storedConfig;
+  if (!oauthDeps.isTokenExpiringSoon(storedConfig.oauth)) return storedConfig;
+
+  output.info('OAuth access token is expiring soon, refreshing…');
+  try {
+    const tokenResponse = await oauthDeps.refreshAccessToken({
+      server,
+      clientId: storedConfig.oauth.clientId,
+      refreshToken: storedConfig.oauth.refreshToken,
+    });
+
+    const newOAuth: StoredOAuth = {
+      accessToken: tokenResponse.access_token,
+      refreshToken: tokenResponse.refresh_token,
+      expiresAt: Date.now() + tokenResponse.expires_in * 1000,
+      scope: tokenResponse.scope,
+      clientId: storedConfig.oauth.clientId,
+    };
+
+    const updated: StoredConfig = { ...storedConfig, oauth: newOAuth };
+    await writeStoredConfig(updated, homeDir);
+    output.info('OAuth token refreshed successfully.');
+    return updated;
+  } catch (err) {
+    output.info(`Could not refresh OAuth token: ${(err as Error).message}`);
+    return storedConfig;
+  }
+}
+
 async function handleShorten(urlValue: string, options: ShortenOptions, runtime: CliRuntime): Promise<void> {
   const output = createOutput(options, runtime);
-  const storedConfig = await readStoredConfig(runtime.homeDir);
+  const oauthDeps = resolveOAuthDeps(runtime);
+  let storedConfig = await readStoredConfig(runtime.homeDir);
+  const server = resolveConfig({ env: runtime.env, storedConfig }).server;
+  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps, server);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
@@ -396,16 +500,16 @@ async function handleShorten(urlValue: string, options: ShortenOptions, runtime:
   const alias = options.alias ? ensureAlias(options.alias) : undefined;
 
   if (alias && !resolvedConfig.token) {
-    throw new CliError('Custom aliases require an authenticated token.', {
-      hint: "Run 'leaflet-cli auth login --token <API_TOKEN>' first, or remove --alias.",
+    throw new CliError('Custom aliases require OAuth authentication.', {
+      hint: "Run 'leaflet-cli auth login' first, or remove --alias.",
       usage: HELP_BY_COMMAND.shorten.usage,
       example: HELP_BY_COMMAND.shorten.example,
     });
   }
 
   if (ttl.outputTtl === 'never' && !resolvedConfig.token) {
-    throw new CliError('Indefinite links require an authenticated admin token.', {
-      hint: "Run 'leaflet-cli auth login --token <API_TOKEN>' with an admin token, or choose 5m, 60m, or 24h.",
+    throw new CliError('Indefinite links require OAuth authentication.', {
+      hint: "Run 'leaflet-cli auth login' with an admin account, or choose 5m, 60m, or 24h.",
       usage: HELP_BY_COMMAND.shorten.usage,
       example: HELP_BY_COMMAND.shorten.example,
     });
@@ -452,48 +556,92 @@ async function handleShorten(urlValue: string, options: ShortenOptions, runtime:
 
 async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): Promise<void> {
   const output = createOutput(options, runtime);
+  const oauthDeps = resolveOAuthDeps(runtime);
   const storedConfig = await readStoredConfig(runtime.homeDir);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
   });
-  const token = options.token.trim();
 
-  if (!token) {
-    throw new CliError('The token cannot be empty.', {
-      hint: 'Pass a non-empty token with --token.',
-      usage: HELP_BY_COMMAND['auth login'].usage,
-      example: HELP_BY_COMMAND['auth login'].example,
+  const clientId = options.clientId ?? 'leaflet-cli';
+  const codeVerifier = oauthDeps.generateCodeVerifier();
+  const codeChallenge = oauthDeps.computeCodeChallenge(codeVerifier);
+  const state = oauthDeps.generateState();
+  const scope = 'shorten:create shorten:create:alias shorten:create:never urls:delete user:read';
+
+  output.info('Starting OAuth browser login. A browser window will open for you to authorize the CLI.');
+
+  const { port: portPromise, result: codePromise } = oauthDeps.startCallbackServer(state);
+  const callbackPort = await portPromise;
+  const redirectUri = `http://localhost:${callbackPort}/callback`;
+
+  const authorizeUrl = new URL(`${resolvedConfig.server}/oauth/authorize`);
+  authorizeUrl.searchParams.set('response_type', 'code');
+  authorizeUrl.searchParams.set('client_id', clientId);
+  authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+  authorizeUrl.searchParams.set('scope', scope);
+  authorizeUrl.searchParams.set('state', state);
+  authorizeUrl.searchParams.set('code_challenge', codeChallenge);
+  authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+
+  output.info(`Authorization URL:\n  ${authorizeUrl.toString()}`);
+
+  try {
+    await oauthDeps.openBrowser(authorizeUrl.toString());
+    output.info('Browser opened. Waiting for authorization…');
+  } catch {
+    output.info('Could not open browser automatically. Open the URL above manually.');
+  }
+
+  let code: string;
+  try {
+    code = await codePromise;
+  } catch (err) {
+    throw new CliError('OAuth authorization failed.', {
+      hint: (err as Error).message,
     });
   }
 
-  const client = new LeafletApiClient(runtime.fetchImpl, output);
-  const validation = await client.validateToken(resolvedConfig.server, token);
-
-  if (validation === 'invalid') {
-    throw new CliError('The token was rejected by the server.', {
-      hint: 'Generate a fresh token from /auth/api-key and try again.',
-      usage: HELP_BY_COMMAND['auth login'].usage,
-      example: HELP_BY_COMMAND['auth login'].example,
+  let tokenResponse: Awaited<ReturnType<typeof exchangeCodeForTokens>>;
+  try {
+    tokenResponse = await oauthDeps.exchangeCodeForTokens({
+      server: resolvedConfig.server,
+      clientId,
+      code,
+      redirectUri,
+      codeVerifier,
+    });
+  } catch (err) {
+    throw new CliError('OAuth token exchange failed.', {
+      hint: (err as Error).message,
     });
   }
+
+  const oauth: StoredOAuth = {
+    accessToken: tokenResponse.access_token,
+    refreshToken: tokenResponse.refresh_token,
+    expiresAt: Date.now() + tokenResponse.expires_in * 1000,
+    scope: tokenResponse.scope,
+    clientId,
+  };
 
   const configPath = await writeStoredConfig({
     ...storedConfig,
-    token,
+    oauth,
   }, runtime.homeDir);
 
   output.success({
     authenticated: true,
-    authStatus: validation,
+    authStatus: 'authenticated',
     configPath,
     server: resolvedConfig.server,
     tokenSource: 'config',
+    scope: oauth.scope,
   }, [
-    'Authentication: configured',
+    'Authentication: OAuth 2.0 configured',
     `Server: ${resolvedConfig.server}`,
-    `Stored token: ${configPath}`,
-    `Server validation: ${validation === 'admin' ? 'admin token' : 'non-admin token'}`,
+    `Stored tokens: ${configPath}`,
+    `Scope: ${oauth.scope}`,
   ]);
 }
 
@@ -505,15 +653,15 @@ async function handleAuthLogout(options: LogoutOptions, runtime: CliRuntime): Pr
     storedConfig,
   });
 
-  const hadStoredToken = Boolean(storedConfig.token);
+  const hadStoredToken = Boolean(storedConfig.oauth);
   const configPath = await writeStoredConfig({
     ...storedConfig,
-    token: undefined,
+    oauth: undefined,
   }, runtime.homeDir);
 
   const stillAuthenticated = resolvedBeforeLogout.tokenSource === 'env';
   const lines = [
-    hadStoredToken ? 'Stored token removed.' : 'No stored token was present.',
+    hadStoredToken ? 'Stored credentials removed.' : 'No stored credentials were present.',
     `Config path: ${configPath}`,
   ];
 
@@ -533,7 +681,10 @@ async function handleAuthLogout(options: LogoutOptions, runtime: CliRuntime): Pr
 
 async function handleAuthStatus(options: SharedOptions, runtime: CliRuntime): Promise<void> {
   const output = createOutput(options, runtime);
-  const storedConfig = await readStoredConfig(runtime.homeDir);
+  const oauthDeps = resolveOAuthDeps(runtime);
+  let storedConfig = await readStoredConfig(runtime.homeDir);
+  const server = resolveConfig({ env: runtime.env, storedConfig }).server;
+  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps, server);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
@@ -555,17 +706,26 @@ async function handleAuthStatus(options: SharedOptions, runtime: CliRuntime): Pr
   }
 
   const client = new LeafletApiClient(runtime.fetchImpl, output);
-  const validation = await client.validateToken(resolvedConfig.server, resolvedConfig.token);
+  const identityResult = await client.getOAuthIdentity(resolvedConfig.server, resolvedConfig.token);
 
-  if (validation === 'invalid') {
-    throw new CliError('The configured token was rejected by the server.', {
-      hint: "Run 'leaflet-cli auth login --token <API_TOKEN>' with a fresh token, or unset the token environment variable.",
+  if (identityResult.status === 'invalid') {
+    throw new CliError(identityResult.error, {
+      hint: "Run 'leaflet-cli auth login' with a fresh token, or unset LEAFLET_TOKEN.",
       usage: HELP_BY_COMMAND['auth status'].usage,
       example: HELP_BY_COMMAND['auth status'].example,
     });
   }
 
-  const authStatus: AuthStatus = validation === 'admin' ? 'admin' : 'authenticated';
+  if (identityResult.status === 'insufficient_scope') {
+    throw new CliError(identityResult.error, {
+      hint: identityResult.hint ?? "Re-authenticate with 'leaflet-cli auth login' so the token includes 'user:read'.",
+      usage: HELP_BY_COMMAND['auth status'].usage,
+      example: HELP_BY_COMMAND['auth status'].example,
+    });
+  }
+
+  const authStatus: AuthStatus = identityResult.identity.role === 'admin' ? 'admin' : 'authenticated';
+  const scope = identityResult.identity.scopes.join(' ');
 
   output.success({
     authenticated: true,
@@ -573,25 +733,31 @@ async function handleAuthStatus(options: SharedOptions, runtime: CliRuntime): Pr
     server: resolvedConfig.server,
     tokenSource: resolvedConfig.tokenSource,
     configPath: getConfigPath(runtime.homeDir),
+    scope,
+    scopes: identityResult.identity.scopes,
   }, [
     `Authentication: ${authStatus}`,
     `Server: ${resolvedConfig.server}`,
     `Token source: ${resolvedConfig.tokenSource}`,
+    `Scopes: ${scope || '(none)'}`,
     `Config path: ${getConfigPath(runtime.homeDir)}`,
   ]);
 }
 
 async function handleDelete(idValue: string, options: DeleteOptions, runtime: CliRuntime): Promise<void> {
   const output = createOutput(options, runtime);
-  const storedConfig = await readStoredConfig(runtime.homeDir);
+  const oauthDeps = resolveOAuthDeps(runtime);
+  let storedConfig = await readStoredConfig(runtime.homeDir);
+  const server = resolveConfig({ env: runtime.env, storedConfig }).server;
+  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps, server);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
   });
 
   if (!resolvedConfig.token) {
-    throw new CliError('Deleting links requires an authenticated admin token.', {
-      hint: "Run 'leaflet-cli auth login --token <API_TOKEN>' first.",
+    throw new CliError('Deleting links requires OAuth authentication.', {
+      hint: "Run 'leaflet-cli auth login' first.",
       usage: HELP_BY_COMMAND.delete.usage,
       example: HELP_BY_COMMAND.delete.example,
     });
@@ -641,7 +807,7 @@ function buildProgram(runtime: CliRuntime): Command {
     .addHelpText('after', `
 Examples:
   leaflet-cli shorten https://example.com --ttl=60m
-  leaflet-cli auth login --token <API_TOKEN>
+  leaflet-cli auth login
   leaflet-cli auth status --json
 `);
 
@@ -663,10 +829,10 @@ Examples:
 
   const authCommand = program
     .command('auth')
-    .description('Manage the stored API token.')
+    .description('Manage stored OAuth credentials.')
     .addHelpText('after', `
 Examples:
-  leaflet-cli auth login --token <API_TOKEN>
+  leaflet-cli auth login
   leaflet-cli auth logout
   leaflet-cli auth status --json
 `);
@@ -674,11 +840,11 @@ Examples:
   addSharedOptions(
     authCommand
       .command('login')
-      .description('Verify and store an API token locally.')
-      .requiredOption('--token <token>', 'API token from /auth/api-key')
+      .description('Authenticate via the OAuth browser flow.')
+      .option('--client-id <clientId>', 'OAuth client ID (default: leaflet-cli)')
       .addHelpText('after', `
 Examples:
-  leaflet-cli auth login --token <API_TOKEN>
+  leaflet-cli auth login
 `)
   ).action(async (options: AuthLoginOptions) => {
     await handleAuthLogin(options, runtime);
@@ -686,7 +852,7 @@ Examples:
 
   authCommand
     .command('logout')
-    .description('Remove the locally stored API token.')
+    .description('Remove locally stored OAuth credentials.')
     .option('--json', 'Output machine-readable JSON')
     .option('--verbose', 'Print additional command progress to stderr')
     .addHelpText('after', `
@@ -713,7 +879,7 @@ Examples:
   addSharedOptions(
     program
       .command('delete <id>')
-      .description('Delete a short URL by numeric id. Admin token required.')
+      .description("Delete a short URL by numeric id. Requires admin role and the 'urls:delete' scope.")
       .addHelpText('after', `
 Examples:
   leaflet-cli delete 42

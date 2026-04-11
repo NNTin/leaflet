@@ -2,9 +2,10 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { CliError } from './errors';
+import { StoredOAuth } from './oauth';
 
 export interface StoredConfig {
-  token?: string;
+  oauth?: StoredOAuth;
 }
 
 export interface ResolvedConfig {
@@ -15,7 +16,8 @@ export interface ResolvedConfig {
 }
 
 export const DEFAULT_SERVER = 'https://leaflet.lair.nntin.xyz';
-export const TOKEN_ENV_KEYS = ['LEAFLET_TOKEN', 'LEAFLET_API_TOKEN', 'LEAFLET_API_KEY'] as const;
+export const SERVER_ENV_KEY = 'LEAFLET_SERVER';
+export const TOKEN_ENV_KEYS = ['LEAFLET_TOKEN'] as const;
 
 function sanitizeString(value: string | null | undefined): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -51,8 +53,23 @@ export async function readStoredConfig(homeDir = os.homedir()): Promise<StoredCo
 
     const config: StoredConfig = {};
 
-    if (typeof record.token === 'string') {
-      config.token = sanitizeString(record.token);
+    if (record.oauth && typeof record.oauth === 'object' && !Array.isArray(record.oauth)) {
+      const o = record.oauth as Record<string, unknown>;
+      if (
+        typeof o.accessToken === 'string' &&
+        typeof o.refreshToken === 'string' &&
+        typeof o.expiresAt === 'number' &&
+        typeof o.scope === 'string' &&
+        typeof o.clientId === 'string'
+      ) {
+        config.oauth = {
+          accessToken: o.accessToken,
+          refreshToken: o.refreshToken,
+          expiresAt: o.expiresAt,
+          scope: o.scope,
+          clientId: o.clientId,
+        };
+      }
     }
 
     return config;
@@ -74,9 +91,8 @@ export async function writeStoredConfig(config: StoredConfig, homeDir = os.homed
   const configPath = getConfigPath(homeDir);
   const nextConfig: StoredConfig = {};
 
-  if (config.token) {
-    const token = sanitizeString(config.token);
-    if (token) nextConfig.token = token;
+  if (config.oauth) {
+    nextConfig.oauth = config.oauth;
   }
 
   if (Object.keys(nextConfig).length === 0) {
@@ -101,28 +117,29 @@ export function resolveConfig(input: {
 }): ResolvedConfig {
   const configPath = getConfigPath();
   const envToken = getFirstEnvValue(input.env, TOKEN_ENV_KEYS);
+  const server = sanitizeString(input.env[SERVER_ENV_KEY]) ?? DEFAULT_SERVER;
 
   if (envToken) {
     return {
       configPath,
-      server: DEFAULT_SERVER,
+      server,
       token: envToken,
       tokenSource: 'env',
     };
   }
 
-  if (input.storedConfig.token) {
+  if (input.storedConfig.oauth?.accessToken) {
     return {
       configPath,
-      server: DEFAULT_SERVER,
-      token: input.storedConfig.token,
+      server,
+      token: input.storedConfig.oauth.accessToken,
       tokenSource: 'config',
     };
   }
 
   return {
     configPath,
-    server: DEFAULT_SERVER,
+    server,
     token: null,
     tokenSource: 'none',
   };

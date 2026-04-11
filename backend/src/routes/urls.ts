@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import pool from '../db';
 import { generateShortCode } from '../shortcode';
-import { requireAuth, requireAdmin, optionalApiKeyAuth } from '../middleware/auth';
+import { ensureScopeForOAuthRequest, optionalBearerAuth, requireAdmin, requireAuth, requireScope } from '../middleware/auth';
 import { User } from '../models/user';
 import { publicShortUrlBase } from '../config';
 
@@ -64,7 +64,7 @@ export async function redirectShortCode(req: Request, res: Response, next: NextF
 
 router.post(
   '/shorten',
-  optionalApiKeyAuth,
+  optionalBearerAuth,
   [
     body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
     body('ttl').isIn(['5m', '1h', '24h', 'never']).withMessage('TTL must be one of: 5m, 1h, 24h, never'),
@@ -84,12 +84,28 @@ router.post(
       const { url, ttl, alias } = req.body as { url: string; ttl: string; alias?: string };
       const user = (req.user as User) ?? null;
 
-      if (ttl === 'never' && (!user || user.role !== 'admin')) {
-        return res.status(403).json({ error: 'Only admins can create links with no expiration.' });
+      if (!ensureScopeForOAuthRequest(req, res, 'shorten:create')) {
+        return;
       }
 
-      if (alias && (!user || (user.role !== 'privileged' && user.role !== 'admin'))) {
-        return res.status(403).json({ error: 'Custom aliases require a privileged account.' });
+      if (ttl === 'never') {
+        if (!ensureScopeForOAuthRequest(req, res, 'shorten:create:never')) {
+          return;
+        }
+
+        if (!user || user.role !== 'admin') {
+          return res.status(403).json({ error: 'Admin access required to create links with no expiration.' });
+        }
+      }
+
+      if (alias) {
+        if (!ensureScopeForOAuthRequest(req, res, 'shorten:create:alias')) {
+          return;
+        }
+
+        if (!user || (user.role !== 'privileged' && user.role !== 'admin')) {
+          return res.status(403).json({ error: 'Privileged account required for custom aliases.' });
+        }
       }
 
       let shortCode: string;
@@ -133,7 +149,7 @@ router.post(
   }
 );
 
-router.get('/urls', requireAuth, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/urls', requireAuth, requireScope('urls:read'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.short_code, u.original_url, u.created_at, u.expires_at, u.is_custom,
@@ -148,7 +164,7 @@ router.get('/urls', requireAuth, requireAdmin, async (req: Request, res: Respons
   }
 });
 
-router.delete('/urls/:id', requireAuth, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/urls/:id', requireAuth, requireScope('urls:delete'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const result = await pool.query('DELETE FROM urls WHERE id = $1 RETURNING id', [id]);

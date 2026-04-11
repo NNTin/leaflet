@@ -1,12 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import pool from '../db';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAdmin, requireAuth, requireScope } from '../middleware/auth';
 import { User } from '../models/user';
 
 const router = express.Router();
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth);
 
 interface UrlRow {
   id: number;
@@ -46,7 +46,7 @@ function toUserDto(row: UserRow) {
   };
 }
 
-router.get('/urls', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/urls', requireScope('urls:read'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query(
       `SELECT u.id, u.short_code, u.original_url, u.created_at, u.expires_at, u.is_custom,
@@ -61,7 +61,7 @@ router.get('/urls', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.get('/users', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/users', requireScope('users:read'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query(
       'SELECT id, github_id, username, role, created_at FROM users ORDER BY created_at DESC'
@@ -74,6 +74,8 @@ router.get('/users', async (req: Request, res: Response, next: NextFunction) => 
 
 router.patch(
   '/users/:id/role',
+  requireScope('users:write'),
+  requireAdmin,
   [
     body('role')
       .isIn(['user', 'privileged'])
@@ -109,7 +111,7 @@ router.patch(
   }
 );
 
-router.delete('/urls/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/urls/:id', requireScope('urls:delete'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const result = await pool.query('DELETE FROM urls WHERE id = $1 RETURNING id', [id]);
