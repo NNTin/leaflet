@@ -8,7 +8,7 @@ interface ErrorPageProps {
 }
 
 export default function ErrorPage({ statusCode, message }: ErrorPageProps = {}) {
-  const routeError = useRouteError?.()
+  const routeError = useRouteError()
 
   const code = statusCode ?? (isRouteErrorResponse(routeError) ? routeError.status : 500)
   const text = message ?? (

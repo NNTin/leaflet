@@ -85,6 +85,16 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false)
   const deleteInputRef = useRef<HTMLInputElement>(null)
 
+  // Close delete modal on Escape key.
+  useEffect(() => {
+    if (!showDeleteModal) return
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !deleting) closeDeleteModal()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [showDeleteModal, deleting])
+
   // Fetch current user (with cache).
   useEffect(() => {
     const cached = meCache.get()
@@ -370,7 +380,7 @@ export default function SettingsPage() {
                   <div key={name} className={styles.providerRow}>
                     <div className={styles.providerInfo}>
                       <span className={styles.providerIcon} aria-hidden="true">
-                        <IconComponent size={20} aria-hidden />
+                        <IconComponent size={20} aria-hidden={true} />
                       </span>
                       <div>
                         <div className={styles.providerName}>{label}</div>

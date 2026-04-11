@@ -114,7 +114,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
                       className={styles.providerBtn}
                     >
                       <span className={styles.providerIcon} aria-hidden="true">
-                        {IconComponent ? <IconComponent size={18} aria-hidden /> : '🔑'}
+                        {IconComponent ? <IconComponent size={18} aria-hidden={true} /> : '🔑'}
                       </span>
                       <span>Continue with {label}</span>
                     </a>

@@ -178,9 +178,15 @@ router.delete('/me', requireAuth, async (req: Request, res: Response, next: Next
 
     // Destroy the session and clear the cookie so the client is logged out.
     req.logout((logoutErr) => {
-      if (logoutErr) return next(logoutErr);
+      if (logoutErr) {
+        next(logoutErr);
+        return;
+      }
       req.session.destroy((destroyErr) => {
-        if (destroyErr) return next(destroyErr);
+        if (destroyErr) {
+          next(destroyErr);
+          return;
+        }
         res.clearCookie('connect.sid');
         res.json({ success: true, message: 'Account deleted successfully.' });
       });
