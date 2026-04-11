@@ -53,6 +53,9 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
                   <span className={styles.badge}>{user.role}</span>
                 )}
               </span>
+              <Link to="/settings" className={styles.link}>
+                Settings
+              </Link>
               <button onClick={handleLogout} className="btn btn-secondary btn-sm">
                 Logout
               </button>

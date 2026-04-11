@@ -8,6 +8,7 @@ const ExpiredPage = lazy(() => import('./pages/ExpiredPage'))
 const RedirectPage = lazy(() => import('./pages/RedirectPage'))
 const DeveloperPage = lazy(() => import('./pages/DeveloperPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/s/:code" element={<RedirectPage />} />
         <Route path="/developer" element={<DeveloperPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Suspense>
   )

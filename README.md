@@ -120,27 +120,80 @@ See [cli/README.md](cli/README.md) for command details and JSON output examples.
 | `DATABASE_SSL_REJECT_UNAUTHORIZED` | Verify the PostgreSQL SSL certificate when `DATABASE_SSL` is enabled | `false` |
 | `SESSION_SECRET` | Session encryption secret | - |
 | `TRUST_PROXY` | Number of trusted reverse proxies in front of the backend | `0` |
-| `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | - |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth App Secret | - |
-| `GITHUB_CALLBACK_URL` | OAuth callback URL | - |
 | `ALLOWED_FRONTEND_ORIGINS` | Comma-separated browser origins allowed for CORS and CSRF origin checks | `http://localhost:5173` |
 | `PUBLIC_SHORT_URL_BASE` | Canonical short-link base URL | `http://localhost:3001/s` |
 | `PUBLIC_API_ORIGIN` | Public backend origin used in OpenAPI responses | `http://localhost:3001` |
 | `DEFAULT_FRONTEND_URL` | Default OAuth post-login redirect target | `http://localhost:5173` |
-| `ADMIN_GITHUB_IDS` | Comma-separated GitHub IDs for auto-admin | - |
+
+### GitHub
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth App Secret |
+| `GITHUB_CALLBACK_URL` | OAuth callback URL (defaults to `PUBLIC_API_ORIGIN/auth/github/callback`) |
+| `ADMIN_GITHUB_IDS` | Comma-separated GitHub user IDs to auto-promote to admin role |
+
+### Google
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 Client Secret |
+| `GOOGLE_CALLBACK_URL` | OAuth callback URL (defaults to `PUBLIC_API_ORIGIN/auth/google/callback`) |
+
+### Discord
+
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_CLIENT_ID` | Discord OAuth2 Application Client ID |
+| `DISCORD_CLIENT_SECRET` | Discord OAuth2 Application Client Secret |
+| `DISCORD_CALLBACK_URL` | OAuth callback URL (defaults to `PUBLIC_API_ORIGIN/auth/discord/callback`) |
+
+### Microsoft
+
+| Variable | Description |
+|----------|-------------|
+| `MICROSOFT_CLIENT_ID` | Microsoft Entra (Azure AD) Application Client ID |
+| `MICROSOFT_CLIENT_SECRET` | Microsoft Entra Application Client Secret |
+| `MICROSOFT_CALLBACK_URL` | OAuth callback URL (defaults to `PUBLIC_API_ORIGIN/auth/microsoft/callback`) |
+
+### Apple Sign In
+
+| Variable | Description |
+|----------|-------------|
+| `APPLE_CLIENT_ID` | Apple Services ID (e.g. `com.example.app`) |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `APPLE_KEY_ID` | Apple Sign In private key ID |
+| `APPLE_PRIVATE_KEY` | PEM-formatted `.p8` private key (newlines escaped as `\n`) |
+| `APPLE_CALLBACK_URL` | OAuth callback URL (defaults to `PUBLIC_API_ORIGIN/auth/apple/callback`) |
+
+> **Note:** Providers are optional. If a provider's credentials are not set, its login and linking routes return `503`. Only configured providers are shown in the Connected Accounts UI.
 
 ## API Reference
 
 See the interactive API playground at `/developer` or the OpenAPI spec at `/api/openapi.json`.
 
-### Endpoints
+### Auth Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/auth/:provider` | Start OAuth login (`github`, `google`, `discord`, `microsoft`, `apple`) |
+| `GET` | `/auth/:provider/link` | Link an additional provider to your account (requires session) |
+| `GET` | `/auth/:provider/callback` | OAuth callback for GET-based providers |
+| `POST` | `/auth/apple/callback` | Apple Sign In callback (form_post response mode) |
+| `GET` | `/auth/me` | Get current user |
+| `GET` | `/auth/identities` | List connected providers (requires session) |
+| `DELETE` | `/auth/identities/:provider` | Disconnect a provider (requires session; guards last identity) |
+| `POST` | `/auth/logout` | Log out |
+| `POST` | `/auth/merge/initiate` | Start account merge flow (requires session) |
+| `POST` | `/auth/merge/confirm` | Confirm and execute account merge (requires session) |
+
+### Other Endpoints
 
 - `POST /api/shorten` — Create a short URL
 - `GET /s/:code` — Canonical redirect to original URL
 - `GET /api/:code` — Redirect to original URL
-- `GET /auth/github` — Start GitHub OAuth
-- `GET /auth/me` — Get current user
-- `POST /auth/logout` — Logout
 - `GET /admin/users` — List users (admin)
 - `PATCH /admin/users/:id/role` — Update user role (admin)
 - `DELETE /admin/urls/:id` — Delete URL (admin)

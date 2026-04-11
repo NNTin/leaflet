@@ -62,6 +62,37 @@ components:
         error:
           type: string
 
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        hint:
+          type: string
+
+    Identity:
+      type: object
+      properties:
+        id:
+          type: integer
+        provider:
+          type: string
+          enum: [github, google, discord, microsoft, apple]
+        displayName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        emailVerified:
+          type: boolean
+        connectedAt:
+          type: string
+          format: date-time
+
     OAuthError:
       type: object
       properties:
@@ -142,17 +173,77 @@ paths:
                   csrfToken:
                     type: string
 
-  /auth/github:
+  /auth/{provider}:
     get:
-      summary: Initiate GitHub OAuth flow
+      summary: Initiate OAuth login for a provider
       tags: [Auth]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [github, google, discord, microsoft, apple]
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+          description: URL to redirect to after successful authentication
       responses:
         '302':
-          description: Redirects to GitHub OAuth
+          description: Redirects to the provider OAuth authorization page
+        '400':
+          description: Unknown provider
+        '503':
+          description: Provider not configured on this server
 
-  /auth/github/callback:
+  /auth/{provider}/link:
     get:
-      summary: GitHub OAuth callback
+      summary: Link an additional provider to the currently authenticated account
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [github, google, discord, microsoft, apple]
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirects to the provider OAuth flow
+        '400':
+          description: Unknown provider
+        '401':
+          description: Not authenticated
+        '503':
+          description: Provider not configured
+
+  /auth/{provider}/callback:
+    get:
+      summary: OAuth callback for GET-based providers
+      tags: [Auth]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [github, google, discord, microsoft]
+      responses:
+        '302':
+          description: Redirects to frontend after authentication (with ?auth=link_conflict on conflict)
+
+  /auth/apple/callback:
+    post:
+      summary: Apple OAuth callback (form_post response mode)
       tags: [Auth]
       responses:
         '302':
@@ -203,6 +294,60 @@ paths:
                   hint:
                     type: string
 
+  /auth/identities:
+    get:
+      summary: List connected provider identities for the current user
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Array of connected identities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Identity'
+        '401':
+          description: Not authenticated
+
+  /auth/identities/{provider}:
+    delete:
+      summary: Disconnect a provider identity from the current account
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [github, google, discord, microsoft, apple]
+      responses:
+        '200':
+          description: Identity disconnected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Cannot disconnect the only remaining identity, or unknown provider
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not authenticated
+        '404':
+          description: Identity not found for this user
+
   /auth/logout:
     post:
       summary: Log out current session
@@ -219,6 +364,100 @@ paths:
                 properties:
                   message:
                     type: string
+
+  /auth/merge/initiate:
+    post:
+      summary: Initiate an account merge (returns a one-time confirmation token)
+      description: |
+        Begins the two-step merge flow.  The caller must already be authenticated
+        as the *surviving* user.  The response contains a `mergeToken` that must
+        be echoed back to `POST /auth/merge/confirm` within 10 minutes.
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId]
+              properties:
+                targetUserId:
+                  type: integer
+                  description: ID of the user account to be merged into the current account
+      responses:
+        '200':
+          description: Merge token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  mergeToken:
+                    type: string
+                  targetUser:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      username:
+                        type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '400':
+          description: Missing targetUserId, self-merge, or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not authenticated
+        '404':
+          description: Target user not found
+
+  /auth/merge/confirm:
+    post:
+      summary: Confirm and execute a previously initiated account merge
+      tags: [Auth]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mergeToken]
+              properties:
+                mergeToken:
+                  type: string
+                  description: Token returned by POST /auth/merge/initiate
+      responses:
+        '200':
+          description: Merge completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Missing token, no pending merge, or token expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Token mismatch
 
   /oauth/authorize:
     get:

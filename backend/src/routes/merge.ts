@@ -62,7 +62,7 @@ router.post('/initiate', requireAuth, async (req: Request, res: Response, next: 
     }
 
     const targetResult = await pool.query<{ id: number; username: string; role: string }>(
-      `SELECT id, username, role FROM users WHERE id = $1`,
+      `SELECT * FROM users WHERE id = $1`,
       [targetUserId],
     );
 
@@ -150,7 +150,7 @@ router.post('/confirm', requireAuth, async (req: Request, res: Response, next: N
     const mergedUserId = pendingMerge.targetUserId;
 
     // Verify the target still exists.
-    const targetCheck = await pool.query(`SELECT id FROM users WHERE id = $1`, [mergedUserId]);
+    const targetCheck = await pool.query(`SELECT * FROM users WHERE id = $1`, [mergedUserId]);
     if (targetCheck.rows.length === 0) {
       delete req.session.pendingMerge;
       res.status(404).json({ success: false, error: 'Target user no longer exists.' });

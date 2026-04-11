@@ -1,0 +1,149 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+}
+
+.content {
+  width: 100%;
+  max-width: 640px;
+  padding-top: 2rem;
+  padding-bottom: 3rem;
+}
+
+.heading {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--green-primary);
+  letter-spacing: -0.5px;
+  margin-bottom: 0.4rem;
+}
+
+.subheading {
+  color: var(--muted);
+  font-size: 0.97rem;
+  margin-bottom: 2rem;
+}
+
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 2rem;
+}
+
+.sectionHeader {
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sectionTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.providerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.4rem;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+
+.providerRow:last-child {
+  border-bottom: none;
+}
+
+.providerInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.providerIcon {
+  font-size: 1.4rem;
+  width: 2rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.providerName {
+  font-weight: 600;
+  font-size: 0.97rem;
+  color: var(--text);
+}
+
+.providerStatus {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+.connectedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--green-primary);
+  background: #e8f5e9;
+  border-radius: 20px;
+  padding: 0.2rem 0.65rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.error {
+  background: #fff3f3;
+  border: 1px solid #f5c6c6;
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  color: #c0392b;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.infoBox {
+  background: #f0f7ff;
+  border: 1px solid #b3d4f5;
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  color: #1a4a7a;
+  font-size: 0.87rem;
+  margin: 0 1.4rem 1rem;
+}
+
+.loading {
+  text-align: center;
+  color: var(--muted);
+  padding: 3rem 1rem;
+}
+
+.loginPrompt {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+}
+
+.loginPrompt a {
+  color: var(--green-primary);
+  font-weight: 600;
+}
