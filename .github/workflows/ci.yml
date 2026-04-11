@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_DATABASE_URL: postgresql://leaflet:leaflet@localhost:5432/leaflet_e2e
+      GITHUB_CLIENT_ID: ""
+      GITHUB_CLIENT_SECRET: ""
+      GITHUB_CALLBACK_URL: ""
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      GOOGLE_CALLBACK_URL: ""
+      DISCORD_CLIENT_ID: ""
+      DISCORD_CLIENT_SECRET: ""
+      DISCORD_CALLBACK_URL: ""
+      MICROSOFT_CLIENT_ID: ""
+      MICROSOFT_CLIENT_SECRET: ""
+      MICROSOFT_CALLBACK_URL: ""
+      APPLE_CLIENT_ID: ""
+      APPLE_TEAM_ID: ""
+      APPLE_KEY_ID: ""
+      APPLE_PRIVATE_KEY: ""
+      APPLE_CALLBACK_URL: ""
+      ADMIN_GITHUB_IDS: ""
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: leaflet
+          POSTGRES_PASSWORD: leaflet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U leaflet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install PostgreSQL client
+        run: |
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          else
+            apt-get update
+            apt-get install -y postgresql-client
+          fi
+
+      - name: Build backend
+        run: npm run build --workspace backend
+
+      - name: Test backend
+        run: npm run test --workspace backend
+
+      - name: Typecheck frontend
+        run: npm run lint --workspace frontend
+
+      - name: Build frontend
+        run: npm run build --workspace frontend
+        env:
+          VITE_API_ORIGIN: http://localhost:3001
+
+      - name: Build CLI
+        run: npm run build --workspace cli
+
+      - name: Test CLI
+        run: npm run test --workspace cli
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+
+      - name: Run e2e
+        run: npm run test:e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
