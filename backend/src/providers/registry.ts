@@ -350,7 +350,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
       const clientID = process.env.APPLE_CLIENT_ID;
       const teamID = process.env.APPLE_TEAM_ID;
       const keyID = process.env.APPLE_KEY_ID;
-      const privateKeyString = process.env.APPLE_PRIVATE_KEY;
+      const privateKeyString = process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
       if (!clientID || !teamID || !keyID || !privateKeyString) {
         console.warn(
           '[auth] Apple provider not configured ' +
