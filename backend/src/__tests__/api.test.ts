@@ -707,6 +707,31 @@ describe('OpenAPI TTL enum contract', () => {
     const ttlEnum = spec.paths['/api/shorten'].post.requestBody.content['application/json'].schema.properties.ttl.enum;
     expect(ttlEnum).not.toContain('60m');
   });
+
+  it('documents provider callback error responses', () => {
+    const spec = YAML.load(path.join(__dirname, '../openapi.yaml')) as {
+      paths: {
+        '/auth/{provider}/callback': {
+          get: {
+            responses: Record<string, unknown>;
+          };
+        };
+        '/auth/apple/callback': {
+          post: {
+            responses: Record<string, unknown>;
+          };
+        };
+      };
+    };
+
+    const callbackResponses = spec.paths['/auth/{provider}/callback'].get.responses;
+    const appleCallbackResponses = spec.paths['/auth/apple/callback'].post.responses;
+
+    expect(callbackResponses).toHaveProperty('400');
+    expect(callbackResponses).toHaveProperty('405');
+    expect(callbackResponses).toHaveProperty('503');
+    expect(appleCallbackResponses).toHaveProperty('503');
+  });
 });
 
 describe('POST /api/shorten - anonymous rate limiting', () => {
@@ -1694,6 +1719,27 @@ describe('GET /auth/:provider/link - provider link guards', () => {
   });
 });
 
+describe('GET /auth/:provider/callback - provider guards', () => {
+  it('returns 400 for an unknown provider', async () => {
+    const res = await request(app).get('/auth/unknown/callback');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unknown provider/i);
+  });
+
+  it('returns 503 when a valid provider callback is not configured', async () => {
+    const res = await request(app).get('/auth/google/callback');
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/not configured/i);
+  });
+
+  it('returns 405 for apple because the callback must use POST', async () => {
+    const res = await request(app).get('/auth/apple/callback');
+    expect(res.status).toBe(405);
+    expect(res.body.error).toMatch(/must use post/i);
+    expect(res.body.hint).toMatch(/form_post/i);
+  });
+});
+
 describe('GET /auth/identities', () => {
   it('returns 401 when not authenticated', async () => {
     const res = await request(app).get('/auth/identities');
@@ -1818,6 +1864,19 @@ describe('POST /auth/merge/initiate', () => {
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/targetUserId/i);
+  });
+
+  it('returns 400 when targetUserId is not a whole number', async () => {
+    const user = makeRegularUser();
+    const userB = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.4.1b');
+    const res = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.4.1b')
+      .send({ targetUserId: `${userB.id}abc` });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/whole number/i);
   });
 
   it('returns 400 when trying to merge with self', async () => {

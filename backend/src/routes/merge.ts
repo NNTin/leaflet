@@ -8,8 +8,9 @@
  *      merge is executed in a single database transaction.
  *
  * The initiating user retains their account (the "surviving" user).
- * The target user's identities, URLs, and OAuth resources are moved to the
- * surviving user and the target user row is deleted.
+ * The target user's identities, URLs, OAuth clients, and OAuth consents are
+ * moved to the surviving user. Existing OAuth authorization codes and tokens
+ * for the target user are revoked/removed when that user row is deleted.
  *
  * Security notes:
  *   - Both endpoints require an active browser session (requireAuth).
@@ -28,6 +29,19 @@ const router = express.Router();
 
 const MERGE_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+function parseTargetUserId(rawTargetId: unknown): number | null {
+  if (typeof rawTargetId === 'number') {
+    return Number.isSafeInteger(rawTargetId) && rawTargetId >= 0 ? rawTargetId : null;
+  }
+
+  if (typeof rawTargetId === 'string' && /^\d+$/.test(rawTargetId)) {
+    const parsedTargetUserId = Number(rawTargetId);
+    return Number.isSafeInteger(parsedTargetUserId) ? parsedTargetUserId : null;
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // POST /auth/merge/initiate
 // ---------------------------------------------------------------------------
@@ -41,17 +55,13 @@ router.post('/initiate', requireAuth, async (req: Request, res: Response, next: 
     const rawTargetId: unknown =
       req.body?.targetUserId ?? req.session.linkConflict?.conflictingUserId;
 
-    const targetUserId = typeof rawTargetId === 'number'
-      ? rawTargetId
-      : typeof rawTargetId === 'string'
-        ? parseInt(rawTargetId, 10)
-        : NaN;
+    const targetUserId = parseTargetUserId(rawTargetId);
 
-    if (isNaN(targetUserId)) {
+    if (targetUserId === null) {
       res.status(400).json({
         success: false,
-        error: 'targetUserId is required.',
-        hint: 'POST { "targetUserId": <number> } or initiate from a link-conflict flow.',
+        error: 'targetUserId is required and must be a whole number.',
+        hint: 'POST { "targetUserId": <number> } with an integer user ID, or initiate from a link-conflict flow.',
       });
       return;
     }
@@ -229,7 +239,8 @@ router.post('/confirm', requireAuth, async (req: Request, res: Response, next: N
         [survivingUserId, mergedUserId, survivingUserId],
       );
 
-      // 7. Delete the merged user row (cascades handled by ON DELETE clauses).
+      // 7. Delete the merged user row. OAuth codes/access tokens/refresh tokens
+      // tied to the merged user are revoked/removed by ON DELETE CASCADE.
       await client.query(`DELETE FROM users WHERE id = $1`, [mergedUserId]);
 
       await client.query('COMMIT');

@@ -264,8 +264,21 @@ router.get(
       return;
     }
 
-    if (!isValidProvider(provider) || !isProviderRegistered(provider)) {
-      res.status(400).json({ success: false, error: 'Unknown or unconfigured provider.' });
+    if (!isValidProvider(provider)) {
+      res.status(400).json({
+        success: false,
+        error: 'Unknown provider.',
+        hint: `Valid providers: ${VALID_PROVIDERS.join(', ')}.`,
+      });
+      return;
+    }
+
+    if (!isProviderRegistered(provider)) {
+      res.status(503).json({
+        success: false,
+        error: `${provider} authentication is not configured on this server.`,
+        hint: 'Contact the administrator.',
+      });
       return;
     }
 
