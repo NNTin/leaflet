@@ -14,6 +14,10 @@ export const PROVIDER_META: ProviderMeta[] = [
 ]
 
 /** Map of provider name → metadata for O(1) lookup. */
-export const PROVIDER_META_MAP: Record<string, ProviderMeta> = Object.fromEntries(
-  PROVIDER_META.map((p) => [p.name, p])
+export const PROVIDER_META_MAP: Record<string, ProviderMeta> = PROVIDER_META.reduce(
+  (map, provider) => {
+    map[provider.name] = provider
+    return map
+  },
+  {} as Record<string, ProviderMeta>
 )

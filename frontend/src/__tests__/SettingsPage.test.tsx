@@ -69,6 +69,15 @@ describe('SettingsPage', () => {
         })
       }
 
+      if (url.endsWith('/auth/providers')) {
+        return Promise.resolve({
+          data: [
+            { name: 'github', label: 'GitHub' },
+            { name: 'google', label: 'Google' },
+          ],
+        })
+      }
+
       throw new Error(`Unexpected axios.get call for ${url}`)
     })
 
