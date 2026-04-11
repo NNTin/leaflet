@@ -21,10 +21,30 @@ interface UrlRecord {
 
 interface UserRecord {
   id: number;
-  github_id: string;
+  github_id?: string | null;
   username: string;
   role: string;
   created_at: Date;
+}
+
+interface IdentityRecord {
+  id: number;
+  user_id: number;
+  provider: string;
+  provider_user_id: string;
+  display_name: string | null;
+  email: string | null;
+  email_verified: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface MergeLogRecord {
+  id: number;
+  surviving_user_id: number;
+  merged_user_id: number;
+  initiated_by: number | null;
+  merged_at: Date;
 }
 
 interface OAuthClientRecord {
@@ -87,6 +107,10 @@ const db = {
   oauthCodes: [] as OAuthCodeRecord[],
   oauthAccessTokens: [] as OAuthAccessTokenRecord[],
   oauthRefreshTokens: [] as OAuthRefreshTokenRecord[],
+  userIdentities: [] as IdentityRecord[],
+  mergeLogs: [] as MergeLogRecord[],
+  nextIdentityId: 1,
+  nextMergeLogId: 1,
 };
 
 function nextUuid(): string {
@@ -97,7 +121,6 @@ jest.mock('../db', () => {
   return {
     query: jest.fn(async (sql: string, params: unknown[] = []) => {
       const s = sql.replace(/\s+/g, ' ').trim().toLowerCase();
-
       if (s.startsWith('insert into urls')) {
         const [short_code, original_url, user_id, expires_at, is_custom] = params as [string, string, number | null, Date | null, boolean];
         const row: UrlRecord = {
@@ -156,6 +179,12 @@ jest.mock('../db', () => {
       if (s.startsWith('select * from users where id')) {
         const [id] = params as [number];
         return { rows: db.users.filter(u => u.id === Number(id)) };
+      }
+
+      if (s.startsWith('select 1 from users where id')) {
+        const [id] = params as [number];
+        const found = db.users.find(u => u.id === Number(id));
+        return { rows: found ? [{ 1: 1 }] : [] };
       }
 
       if (s.startsWith('select') && s.includes('from users')) {
@@ -300,7 +329,6 @@ jest.mock('../db', () => {
       }
 
       if (s.includes('from oauth_consents') && s.startsWith('select')) {
-        const [userId] = params as [number];
         return { rows: [] };
       }
 
@@ -308,7 +336,201 @@ jest.mock('../db', () => {
         return { rows: [] };
       }
 
+      // user_identities: upsert
+      if (s.startsWith('insert into user_identities')) {
+        const [userId, provider, providerUserId, displayName, email, emailVerified] =
+          params as [number, string, string, string | null, string | null, boolean];
+        const existing = db.userIdentities.find(
+          (i) => i.user_id === userId && i.provider === provider,
+        );
+        if (existing) {
+          existing.provider_user_id = providerUserId;
+          existing.display_name = displayName;
+          existing.email = email;
+          existing.email_verified = emailVerified;
+          existing.updated_at = new Date();
+          return { rows: [existing] };
+        }
+        const row: IdentityRecord = {
+          id: db.nextIdentityId++,
+          user_id: userId,
+          provider,
+          provider_user_id: providerUserId,
+          display_name: displayName,
+          email,
+          email_verified: emailVerified,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+        db.userIdentities.push(row);
+        return { rows: [row] };
+      }
+
+      // user_identities: find by provider + provider_user_id
+      if (
+        s.startsWith('select * from user_identities where provider') ||
+        (s.includes('from user_identities') && s.includes('provider_user_id'))
+      ) {
+        const [provider, providerUserId] = params as [string, string];
+        return {
+          rows: db.userIdentities.filter(
+            (i) => i.provider === provider && i.provider_user_id === providerUserId,
+          ),
+        };
+      }
+
+      // user_identities: list by user_id
+      if (s.startsWith('select * from user_identities where user_id')) {
+        const [userId] = params as [number];
+        const rows = db.userIdentities
+          .filter((i) => i.user_id === userId)
+          .sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+        return { rows };
+      }
+
+      // user_identities: count by user_id
+      if (s.startsWith('select count') && s.includes('from user_identities where user_id')) {
+        const [userId] = params as [number];
+        const count = db.userIdentities.filter((i) => i.user_id === userId).length;
+        return { rows: [{ count: String(count) }] };
+      }
+
+      // user_identities: delete duplicate providers before merge (specific check MUST come first)
+      if (s.startsWith('delete from user_identities') && s.includes('and provider in')) {
+        const [survivingId, mergedId] = params as [number, number];
+        const survivorProviders = new Set(
+          db.userIdentities.filter((i) => i.user_id === survivingId).map((i) => i.provider),
+        );
+        db.userIdentities = db.userIdentities.filter(
+          (i) => !(i.user_id === mergedId && survivorProviders.has(i.provider)),
+        );
+        return { rowCount: 0, rows: [] };
+      }
+
+      // user_identities: disconnect (generic delete by user_id + provider)
+      if (s.startsWith('delete from user_identities')) {
+        const [userId, provider] = params as [number, string];
+        const idx = db.userIdentities.findIndex(
+          (i) => i.user_id === userId && i.provider === provider,
+        );
+        if (idx === -1) return { rowCount: 0, rows: [] };
+        db.userIdentities.splice(idx, 1);
+        return { rowCount: 1, rows: [] };
+      }
+
+      // user_identities: move on merge (UPDATE user_identities SET user_id = $1 WHERE user_id = $2)
+      if (s.startsWith('update user_identities set user_id')) {
+        const [survivingId, mergedId] = params as [number, number];
+        db.userIdentities.forEach((i) => {
+          if (i.user_id === mergedId) i.user_id = survivingId;
+        });
+        return { rows: [] };
+      }
+
+      // oauth_consents: delete duplicates before merge
+      if (s.startsWith('delete from oauth_consents') && s.includes('and client_id in')) {
+        return { rows: [] };
+      }
+
+      // oauth_consents: update user_id on merge
+      if (s.startsWith('update oauth_consents set user_id')) {
+        return { rows: [] };
+      }
+
+      // urls: move on merge (UPDATE urls SET user_id = $1 WHERE user_id = $2)
+      if (s.startsWith('update urls set user_id')) {
+        const [survivingId, mergedId] = params as [number, number];
+        db.urls.forEach((u) => {
+          if (u.user_id === mergedId) u.user_id = survivingId;
+        });
+        return { rows: [] };
+      }
+
+      // oauth_clients: move on merge
+      if (s.startsWith('update oauth_clients set user_id')) {
+        const [survivingId, mergedId] = params as [number, number];
+        db.oauthClients.forEach((c) => {
+          if (c.user_id === mergedId) c.user_id = survivingId;
+        });
+        return { rows: [] };
+      }
+
+      // users: new-style insert (username, role) without github_id
+      if (s.startsWith('insert into users (username, role)') || s.startsWith('insert into users(username, role)')) {
+        const [username, role] = params as [string, string];
+        const row: UserRecord = { id: db.nextUserId++, username, role, created_at: new Date() };
+        db.users.push(row);
+        return { rows: [row] };
+      }
+
+      // users: select by id for identity-based lookups
+      if (s.startsWith('select id, username, role, created_at from users where id')) {
+        const [id] = params as [number];
+        return { rows: db.users.filter((u) => u.id === Number(id)).map(({ id, username, role, created_at }) => ({ id, username, role, created_at })) };
+      }
+
+      // users: role resolution update for merge
+      if (s.startsWith('update users set role = (')) {
+        const [survivingId, mergedId] = params as [number, number];
+        const s1 = db.users.find((u) => u.id === survivingId);
+        const s2 = db.users.find((u) => u.id === mergedId);
+        if (s1 && s2) {
+          if (s1.role === 'admin' || s2.role === 'admin') {
+            s1.role = 'admin';
+          } else if (s1.role === 'privileged' || s2.role === 'privileged') {
+            s1.role = 'privileged';
+          }
+        }
+        return { rows: [] };
+      }
+
+      // users: update role to admin (from provider registry)
+      if (s.startsWith("update users set role = 'admin' where id")) {
+        const [id] = params as [number];
+        const u = db.users.find((u) => u.id === id);
+        if (u) u.role = 'admin';
+        return { rows: [] };
+      }
+
+      // users: delete on merge
+      if (s.startsWith('delete from users where id')) {
+        const [id] = params as [number];
+        const idx = db.users.findIndex((u) => u.id === Number(id));
+        if (idx !== -1) db.users.splice(idx, 1);
+        return { rows: [] };
+      }
+
+      // account_merge_log: insert
+      if (s.startsWith('insert into account_merge_log')) {
+        const [survivingUserId, mergedUserId, initiatedBy] = params as [number, number, number | null];
+        const row: MergeLogRecord = {
+          id: db.nextMergeLogId++,
+          surviving_user_id: survivingUserId,
+          merged_user_id: mergedUserId,
+          initiated_by: initiatedBy,
+          merged_at: new Date(),
+        };
+        db.mergeLogs.push(row);
+        return { rows: [row] };
+      }
+
       return { rows: [] };
+    }),
+    connect: jest.fn(async () => {
+      // Return a mock pool client for the merge transaction route.
+      // Delegates to the same query mock so db state changes are reflected.
+      const mockClient = {
+        query: jest.fn(async (sql: string, params: unknown[] = []) => {
+          const s = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+          // Ignore transaction control statements.
+          if (s === 'begin' || s === 'commit' || s === 'rollback') return { rows: [] };
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const pool = require('../db') as { query: jest.Mock };
+          return pool.query(sql, params);
+        }),
+        release: jest.fn(),
+      };
+      return mockClient;
     }),
   };
 });
@@ -458,6 +680,10 @@ beforeEach(() => {
   db.oauthCodes = [];
   db.oauthAccessTokens = [];
   db.oauthRefreshTokens = [];
+  db.userIdentities = [];
+  db.mergeLogs = [];
+  db.nextIdentityId = 1;
+  db.nextMergeLogId = 1;
   jest.clearAllMocks();
 });
 
@@ -480,6 +706,31 @@ describe('OpenAPI TTL enum contract', () => {
     };
     const ttlEnum = spec.paths['/api/shorten'].post.requestBody.content['application/json'].schema.properties.ttl.enum;
     expect(ttlEnum).not.toContain('60m');
+  });
+
+  it('documents provider callback error responses', () => {
+    const spec = YAML.load(path.join(__dirname, '../openapi.yaml')) as {
+      paths: {
+        '/auth/{provider}/callback': {
+          get: {
+            responses: Record<string, unknown>;
+          };
+        };
+        '/auth/apple/callback': {
+          post: {
+            responses: Record<string, unknown>;
+          };
+        };
+      };
+    };
+
+    const callbackResponses = spec.paths['/auth/{provider}/callback'].get.responses;
+    const appleCallbackResponses = spec.paths['/auth/apple/callback'].post.responses;
+
+    expect(callbackResponses).toHaveProperty('400');
+    expect(callbackResponses).toHaveProperty('405');
+    expect(callbackResponses).toHaveProperty('503');
+    expect(appleCallbackResponses).toHaveProperty('503');
   });
 });
 
@@ -1404,5 +1655,477 @@ describe('OAuth token endpoint bypasses CSRF', () => {
       .type('form')
       .send({ grant_type: 'authorization_code', client_id: 'x' });
     expect(res.status).not.toBe(403);
+  });
+});
+
+// ============================================================================
+// Multi-provider auth tests (identities, linking, merge)
+// ============================================================================
+
+function makeIdentity(
+  userId: number,
+  provider: string,
+  providerUserId = `pid-${provider}-${userId}`,
+): IdentityRecord {
+  const row: IdentityRecord = {
+    id: db.nextIdentityId++,
+    user_id: userId,
+    provider,
+    provider_user_id: providerUserId,
+    display_name: `${provider}-user`,
+    email: null,
+    email_verified: false,
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+  db.userIdentities.push(row);
+  return row;
+}
+
+describe('GET /auth/:provider - provider guards', () => {
+  it('returns 400 for an unknown provider', async () => {
+    const res = await request(app).get('/auth/unknown-provider');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unknown provider/i);
+  });
+
+  it('returns 503 when a valid provider is not configured', async () => {
+    // In test env no provider env vars are set, so all registered providers
+    // are absent.  Verify a valid provider name returns 503.
+    const res = await request(app).get('/auth/google');
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/not configured/i);
+  });
+});
+
+describe('GET /auth/:provider/link - provider link guards', () => {
+  it('returns 401 when not authenticated', async () => {
+    const res = await request(app).get('/auth/github/link');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 503 for authenticated user when provider is not configured', async () => {
+    const user = makeRegularUser();
+    const { agent } = await createAuthenticatedSession(user, '10.101.1.1');
+    const res = await agent.get('/auth/google/link').set('X-Forwarded-For', '10.101.1.1');
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 400 for an unknown provider even when authenticated', async () => {
+    const user = makeRegularUser();
+    const { agent } = await createAuthenticatedSession(user, '10.101.1.2');
+    const res = await agent.get('/auth/unknown/link').set('X-Forwarded-For', '10.101.1.2');
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /auth/:provider/callback - provider guards', () => {
+  it('returns 400 for an unknown provider', async () => {
+    const res = await request(app).get('/auth/unknown/callback');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unknown provider/i);
+  });
+
+  it('returns 503 when a valid provider callback is not configured', async () => {
+    const res = await request(app).get('/auth/google/callback');
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/not configured/i);
+  });
+
+  it('returns 405 for apple because the callback must use POST', async () => {
+    const res = await request(app).get('/auth/apple/callback');
+    expect(res.status).toBe(405);
+    expect(res.body.error).toMatch(/must use post/i);
+    expect(res.body.hint).toMatch(/form_post/i);
+  });
+});
+
+describe('GET /auth/identities', () => {
+  it('returns 401 when not authenticated', async () => {
+    const res = await request(app).get('/auth/identities');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns an empty array when the user has no identities', async () => {
+    const user = makeRegularUser();
+    const { agent } = await createAuthenticatedSession(user, '10.101.2.1');
+    const res = await agent.get('/auth/identities').set('X-Forwarded-For', '10.101.2.1');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(0);
+  });
+
+  it('returns connected identities in camelCase for the session user', async () => {
+    const user = makeRegularUser();
+    makeIdentity(user.id, 'github', 'gh-42');
+    makeIdentity(user.id, 'google', 'google-99');
+    const { agent } = await createAuthenticatedSession(user, '10.101.2.2');
+    const res = await agent.get('/auth/identities').set('X-Forwarded-For', '10.101.2.2');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(2);
+    const providers = (res.body as Array<{ provider: string }>).map((i) => i.provider);
+    expect(providers).toContain('github');
+    expect(providers).toContain('google');
+    // Ensure camelCase output.
+    const identity = res.body[0] as Record<string, unknown>;
+    expect(identity).toHaveProperty('displayName');
+    expect(identity).toHaveProperty('connectedAt');
+    expect(identity).not.toHaveProperty('display_name');
+    expect(identity).not.toHaveProperty('created_at');
+  });
+
+  it('does not return identities belonging to other users', async () => {
+    const userA = makeRegularUser();
+    const userB = makeRegularUser();
+    makeIdentity(userA.id, 'github', 'gh-a');
+    makeIdentity(userB.id, 'discord', 'dc-b');
+
+    const { agent } = await createAuthenticatedSession(userA, '10.101.2.3');
+    const res = await agent.get('/auth/identities').set('X-Forwarded-For', '10.101.2.3');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect((res.body as Array<{ provider: string }>)[0].provider).toBe('github');
+  });
+});
+
+describe('DELETE /auth/identities/:provider', () => {
+  it('returns 401 when not authenticated', async () => {
+    const res = await request(app).delete('/auth/identities/github');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for an unknown provider name', async () => {
+    const user = makeRegularUser();
+    makeIdentity(user.id, 'github');
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.3.1');
+    const res = await agent
+      .delete('/auth/identities/badprovider')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.3.1');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unknown provider/i);
+  });
+
+  it('prevents disconnecting the last remaining identity', async () => {
+    const user = makeRegularUser();
+    makeIdentity(user.id, 'github');
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.3.2');
+    const res = await agent
+      .delete('/auth/identities/github')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.3.2');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/only login method/i);
+    expect(res.body.hint).toBeTruthy();
+  });
+
+  it('returns 404 when the provider identity does not exist for the user', async () => {
+    const user = makeRegularUser();
+    makeIdentity(user.id, 'github');
+    makeIdentity(user.id, 'google');
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.3.3');
+    const res = await agent
+      .delete('/auth/identities/discord')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.3.3');
+    expect(res.status).toBe(404);
+  });
+
+  it('successfully disconnects when multiple identities exist', async () => {
+    const user = makeRegularUser();
+    makeIdentity(user.id, 'github');
+    makeIdentity(user.id, 'google');
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.3.4');
+    const res = await agent
+      .delete('/auth/identities/google')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.3.4');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    // Verify the identity was removed.
+    expect(db.userIdentities.some((i) => i.user_id === user.id && i.provider === 'google')).toBe(false);
+  });
+});
+
+describe('POST /auth/merge/initiate', () => {
+  it('returns 401 when not authenticated', async () => {
+    const res = await request(app).post('/auth/merge/initiate').send({ targetUserId: 1 });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when targetUserId is missing', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.4.1');
+    const res = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.4.1')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/targetUserId/i);
+  });
+
+  it('returns 400 when targetUserId is not a whole number', async () => {
+    const user = makeRegularUser();
+    const userB = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.4.1b');
+    const res = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.4.1b')
+      .send({ targetUserId: `${userB.id}abc` });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/whole number/i);
+  });
+
+  it('returns 400 when trying to merge with self', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.4.2');
+    const res = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.4.2')
+      .send({ targetUserId: user.id });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/itself/i);
+  });
+
+  it('returns 404 when target user does not exist', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.4.3');
+    const res = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.4.3')
+      .send({ targetUserId: 99999 });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns a mergeToken and target user info on success', async () => {
+    const userA = makeRegularUser();
+    const userB = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(userA, '10.101.4.4');
+    const res = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.4.4')
+      .send({ targetUserId: userB.id });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(typeof res.body.mergeToken).toBe('string');
+    expect(res.body.mergeToken.length).toBeGreaterThan(20);
+    expect(res.body.targetUser.id).toBe(userB.id);
+    expect(res.body.targetUser.username).toBe(userB.username);
+    expect(res.body.expiresAt).toBeTruthy();
+  });
+});
+
+describe('POST /auth/merge/confirm', () => {
+  it('returns 401 when not authenticated', async () => {
+    const res = await request(app).post('/auth/merge/confirm').send({ mergeToken: 'abc' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when mergeToken is missing', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.5.1');
+    const res = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.1')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.hint).toMatch(/initiate/i);
+  });
+
+  it('returns 400 when no pending merge exists in session', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.101.5.2');
+    const res = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.2')
+      .send({ mergeToken: 'some-token' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no pending merge/i);
+  });
+
+  it('returns 403 when the token does not match', async () => {
+    const userA = makeRegularUser();
+    const userB = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(userA, '10.101.5.3');
+
+    // Initiate first.
+    await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.3')
+      .send({ targetUserId: userB.id });
+
+    // Confirm with wrong token.
+    const res = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.3')
+      .send({ mergeToken: 'wrong-token-value' });
+    expect(res.status).toBe(403);
+  });
+
+  it('merges accounts on the happy path: moves identities and urls, deletes target user', async () => {
+    const userA = makeRegularUser();
+    userA.username = 'user-a';
+    const userB = makeRegularUser();
+    userB.username = 'user-b';
+
+    // Give userB a github identity and a url.
+    makeIdentity(userA.id, 'github', 'gh-a');
+    makeIdentity(userB.id, 'discord', 'dc-b');
+    db.urls.push({
+      id: db.nextUrlId++,
+      short_code: 'user-b-url',
+      original_url: 'https://b.example.com',
+      user_id: userB.id,
+      expires_at: null,
+      is_custom: false,
+      created_at: new Date(),
+    });
+
+    const { agent, csrfToken } = await createAuthenticatedSession(userA, '10.101.5.4');
+
+    // Initiate merge.
+    const initiateRes = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.4')
+      .send({ targetUserId: userB.id });
+    expect(initiateRes.status).toBe(200);
+    const { mergeToken } = initiateRes.body as { mergeToken: string };
+
+    // Confirm merge.
+    const confirmRes = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.4')
+      .send({ mergeToken });
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.success).toBe(true);
+
+    // UserB's discord identity should now belong to userA.
+    const discordIdentity = db.userIdentities.find((i) => i.provider === 'discord');
+    expect(discordIdentity?.user_id).toBe(userA.id);
+
+    // URL owned by userB should now belong to userA.
+    const movedUrl = db.urls.find((u) => u.short_code === 'user-b-url');
+    expect(movedUrl?.user_id).toBe(userA.id);
+
+    // UserB should be deleted.
+    expect(db.users.find((u) => u.id === userB.id)).toBeUndefined();
+
+    // Audit log should record the merge.
+    expect(db.mergeLogs).toHaveLength(1);
+    expect(db.mergeLogs[0].surviving_user_id).toBe(userA.id);
+    expect(db.mergeLogs[0].merged_user_id).toBe(userB.id);
+  });
+
+  it('merge token cannot be used a second time', async () => {
+    const userA = makeRegularUser();
+    const userB = makeRegularUser();
+    makeIdentity(userA.id, 'github');
+    makeIdentity(userB.id, 'google');
+
+    const { agent, csrfToken } = await createAuthenticatedSession(userA, '10.101.5.5');
+
+    const initiateRes = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.5')
+      .send({ targetUserId: userB.id });
+    const { mergeToken } = initiateRes.body as { mergeToken: string };
+
+    // First confirm: succeeds.
+    const firstConfirm = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.5')
+      .send({ mergeToken });
+    expect(firstConfirm.status).toBe(200);
+
+    // Second confirm: no pending merge left.
+    const secondConfirm = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.5.5')
+      .send({ mergeToken });
+    expect(secondConfirm.status).toBe(400);
+    expect(secondConfirm.body.error).toMatch(/no pending merge/i);
+  });
+});
+
+describe('GET /auth/me - session-based browser auth (no OAuth scope required)', () => {
+  it('returns user info for authenticated browser session', async () => {
+    const user = makeRegularUser();
+    const { agent } = await createAuthenticatedSession(user, '10.101.6.1');
+    const res = await agent.get('/auth/me').set('X-Forwarded-For', '10.101.6.1');
+    expect(res.status).toBe(200);
+    expect(res.body.username).toBe(user.username);
+    expect(res.body.role).toBe('user');
+    // Session-based responses do not include scopes.
+    expect(res.body.scopes).toBeUndefined();
+  });
+
+  it('returns null for unauthenticated request', async () => {
+    const res = await request(app).get('/auth/me');
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
+});
+
+describe('POST /auth/merge/confirm - duplicate provider handling', () => {
+  it('deduplicates providers when both users share the same provider before merging', async () => {
+    const userA = makeRegularUser();
+    const userB = makeRegularUser();
+
+    // Both users have github identity; userB also has google.
+    makeIdentity(userA.id, 'github', 'gh-a');
+    makeIdentity(userB.id, 'github', 'gh-b');
+    makeIdentity(userB.id, 'google', 'google-b');
+
+    const { agent, csrfToken } = await createAuthenticatedSession(userA, '10.101.7.1');
+
+    // Initiate merge.
+    const initiateRes = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.7.1')
+      .send({ targetUserId: userB.id });
+    expect(initiateRes.status).toBe(200);
+    const { mergeToken } = initiateRes.body as { mergeToken: string };
+
+    // Confirm merge.
+    const confirmRes = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.7.1')
+      .send({ mergeToken });
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.success).toBe(true);
+
+    // userA keeps their own github identity (userB's conflicting github is dropped).
+    const githubIdentities = db.userIdentities.filter(
+      (i) => i.provider === 'github' && i.user_id === userA.id,
+    );
+    expect(githubIdentities).toHaveLength(1);
+    expect(githubIdentities[0].provider_user_id).toBe('gh-a');
+
+    // userB's google identity is moved to userA.
+    const googleIdentity = db.userIdentities.find(
+      (i) => i.provider === 'google' && i.user_id === userA.id,
+    );
+    expect(googleIdentity).toBeDefined();
+    expect(googleIdentity?.provider_user_id).toBe('google-b');
+
+    // userB is deleted.
+    expect(db.users.find((u) => u.id === userB.id)).toBeUndefined();
   });
 });
