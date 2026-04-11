@@ -18,6 +18,7 @@ import authRoutes from './routes/auth';
 import urlRoutes, { redirectShortCode } from './routes/urls';
 import adminRoutes from './routes/admin';
 import oauthRoutes from './routes/oauth';
+import mergeRoutes from './routes/merge';
 import { isAllowedFrontendOrigin, publicApiOrigin } from './config';
 
 const ANON_SESSION_WINDOW_MS = 60 * 1000;
@@ -36,8 +37,9 @@ const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /**
  * OAuth machine-to-machine endpoints that must be exempt from CSRF.
  * These endpoints authenticate via client credentials, not browser sessions.
+ * Apple's callback also uses form_post (no CSRF token header possible).
  */
-const OAUTH_CSRF_EXEMPT_PATHS = new Set(['/oauth/token', '/oauth/revoke']);
+const OAUTH_CSRF_EXEMPT_PATHS = new Set(['/oauth/token', '/oauth/revoke', '/auth/apple/callback']);
 
 const app = express();
 
@@ -300,6 +302,7 @@ app.use('/auth', authRateLimiter);
 app.use('/admin', adminRateLimiter);
 
 app.use('/auth', authRoutes);
+app.use('/auth/merge', mergeRoutes);
 app.get('/s/:code', redirectShortCode);
 app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
