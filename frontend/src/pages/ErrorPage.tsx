@@ -1,4 +1,4 @@
-import { useRouteError, isRouteErrorResponse, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import styles from './ErrorPage.module.css'
 
@@ -8,16 +8,8 @@ interface ErrorPageProps {
 }
 
 export default function ErrorPage({ statusCode, message }: ErrorPageProps = {}) {
-  const routeError = useRouteError()
-
-  const code = statusCode ?? (isRouteErrorResponse(routeError) ? routeError.status : 500)
-  const text = message ?? (
-    isRouteErrorResponse(routeError)
-      ? routeError.statusText
-      : code === 404
-        ? 'Page not found'
-        : 'Something went wrong'
-  )
+  const code = statusCode ?? 500
+  const text = message ?? (code === 404 ? 'Page not found' : 'Something went wrong')
 
   const is404 = code === 404
 

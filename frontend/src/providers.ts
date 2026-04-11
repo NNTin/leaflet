@@ -1,20 +1,48 @@
-import { ComponentType } from 'react'
-import { SiGithub, SiGoogle, SiDiscord, SiApple } from 'react-icons/si'
-import { BsMicrosoft } from 'react-icons/bs'
+import { ComponentType, createElement } from 'react'
+
+type ProviderIconProps = {
+  size?: number;
+  'aria-hidden'?: boolean | 'true' | 'false';
+}
+
+function makeEmojiIcon(emoji: string): ComponentType<ProviderIconProps> {
+  return function ProviderEmojiIcon({ size = 18, 'aria-hidden': ariaHidden = true }) {
+    return createElement(
+      'span',
+      {
+        'aria-hidden': ariaHidden,
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: `${size}px`,
+          lineHeight: 1,
+        },
+      },
+      emoji,
+    )
+  }
+}
+
+const GitHubIcon = makeEmojiIcon('🐙')
+const GoogleIcon = makeEmojiIcon('🔵')
+const DiscordIcon = makeEmojiIcon('💬')
+const MicrosoftIcon = makeEmojiIcon('🪟')
+const AppleIcon = makeEmojiIcon('🍎')
 
 /** Shared metadata for all known OAuth providers. */
 export interface ProviderMeta {
   name: string;
   label: string;
-  icon: ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' | 'false' }>;
+  icon: ComponentType<ProviderIconProps>;
 }
 
 export const PROVIDER_META: ProviderMeta[] = [
-  { name: 'github',    label: 'GitHub',    icon: SiGithub },
-  { name: 'google',    label: 'Google',    icon: SiGoogle },
-  { name: 'discord',   label: 'Discord',   icon: SiDiscord },
-  { name: 'microsoft', label: 'Microsoft', icon: BsMicrosoft },
-  { name: 'apple',     label: 'Apple',     icon: SiApple },
+  { name: 'github',    label: 'GitHub',    icon: GitHubIcon },
+  { name: 'google',    label: 'Google',    icon: GoogleIcon },
+  { name: 'discord',   label: 'Discord',   icon: DiscordIcon },
+  { name: 'microsoft', label: 'Microsoft', icon: MicrosoftIcon },
+  { name: 'apple',     label: 'Apple',     icon: AppleIcon },
 ]
 
 /** Map of provider name → metadata for O(1) lookup. */
