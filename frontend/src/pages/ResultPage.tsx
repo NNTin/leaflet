@@ -91,7 +91,7 @@ export default function ResultPage() {
               <QRCodeCanvas
                 value={shortUrl}
                 size={180}
-                bgColor="#ffffff"
+                bgColor="transparent"
                 fgColor="#1b5e20"
                 level="M"
                 includeMargin

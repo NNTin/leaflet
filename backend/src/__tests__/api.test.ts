@@ -2200,3 +2200,27 @@ describe('POST /auth/merge/confirm - duplicate provider handling', () => {
     expect(db.users.find((u) => u.id === userB.id)).toBeUndefined();
   });
 });
+
+describe('DELETE /auth/me - account deletion', () => {
+  it('deletes the authenticated user and returns 200', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.102.1.1');
+
+    const res = await agent
+      .delete('/auth/me')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.102.1.1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(db.users.find((u) => u.id === user.id)).toBeUndefined();
+  });
+
+  it('returns 401 for unauthenticated request', async () => {
+    const res = await request(app)
+      .delete('/auth/me')
+      .set('X-Forwarded-For', '10.102.1.2');
+
+    expect(res.status).toBe(401);
+  });
+});

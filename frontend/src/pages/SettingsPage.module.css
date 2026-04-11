@@ -55,6 +55,13 @@
   color: var(--text);
 }
 
+.dangerDescription {
+  padding: 0.9rem 1.4rem 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .providerRow {
   display: flex;
   align-items: center;
@@ -75,10 +82,13 @@
 }
 
 .providerIcon {
-  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 2rem;
-  text-align: center;
+  font-size: 1.25rem;
   flex-shrink: 0;
+  color: var(--text);
 }
 
 .providerName {
@@ -185,4 +195,68 @@
 .loginPrompt a {
   color: var(--green-primary);
   font-weight: 600;
+}
+
+/* Delete account modal */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  max-width: 460px;
+  width: 100%;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modalTitle {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #c62828;
+}
+
+.modalBody {
+  font-size: 0.93rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.deleteInput {
+  width: 100%;
+  padding: 0.55rem 0.85rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.deleteInput:focus {
+  border-color: #c62828;
+}
+
+.modalActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+/* Danger zone section padding for button */
+.section > .btn {
+  margin: 0.9rem 1.4rem 1.2rem;
 }

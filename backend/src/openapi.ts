@@ -578,6 +578,44 @@ const spec: OpenApiDocument = {
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Delete the current authenticated user's account",
+        "description": "Permanently deletes the authenticated user's account and all associated data. The session is invalidated on success.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
       }
     },
     "/auth/identities": {

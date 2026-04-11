@@ -28,6 +28,8 @@ const GLOBAL_API_WINDOW_MS = 15 * 60 * 1000;
 const GLOBAL_API_MAX = 300;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX = 30;
+const AUTH_READ_WINDOW_MS = 60 * 1000;
+const AUTH_READ_MAX = 120;
 const ADMIN_WINDOW_MS = 60 * 1000;
 const ADMIN_MAX = 60;
 
@@ -268,6 +270,16 @@ const authRateLimiter = rateLimit({
   skip: () => process.env.E2E_TEST_MODE === 'true',
 });
 
+// Lighter rate limiter for read-only, cacheable auth endpoints (/auth/me, /auth/providers).
+const authReadRateLimiter = rateLimit({
+  windowMs: AUTH_READ_WINDOW_MS,
+  max: AUTH_READ_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+  skip: () => process.env.E2E_TEST_MODE === 'true',
+});
+
 const adminRateLimiter = rateLimit({
   windowMs: ADMIN_WINDOW_MS,
   max: ADMIN_MAX,
@@ -291,6 +303,9 @@ app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDo
 
 app.use('/api/shorten', anonymousSessionRateLimiter);
 app.use('/api/shorten', anonymousIpGuardRateLimiter);
+// Lightweight read endpoints get a relaxed limiter; all other /auth routes use the stricter one.
+app.use('/auth/me', authReadRateLimiter);
+app.use('/auth/providers', authReadRateLimiter);
 app.use('/auth', authRateLimiter);
 app.use('/admin', adminRateLimiter);
 

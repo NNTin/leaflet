@@ -4,6 +4,7 @@ import axios from 'axios'
 import Navbar from '../components/Navbar'
 import api from '../api'
 import { authUrl } from '../urls'
+import { meCache } from '../authCache'
 import styles from './HomePage.module.css'
 
 interface TtlOption {
@@ -20,6 +21,7 @@ const TTL_OPTIONS: TtlOption[] = [
 const ADMIN_TTL: TtlOption = { label: 'Never expire', value: 'never' }
 
 interface User {
+  id: number;
   username: string;
   role: string;
 }
@@ -40,8 +42,16 @@ export default function HomePage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    const cached = meCache.get()
+    if (cached !== null) {
+      setUser(cached)
+      return
+    }
     axios.get<User | null>(authUrl('/me'), { withCredentials: true })
-      .then(res => setUser(res.data))
+      .then(res => {
+        meCache.set(res.data)
+        setUser(res.data)
+      })
       .catch(() => setUser(null))
   }, [])
 

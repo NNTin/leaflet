@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
+import pool from '../db';
 import { User } from '../models/user';
 import { ProviderName, listIdentitiesForUser, deleteIdentity, countIdentitiesForUser } from '../models/identity';
 import { addAuthFailureParam, defaultFrontendUrl, resolveOAuthReturnTo } from '../config';
@@ -162,6 +163,31 @@ router.post('/logout', (req: Request, res: Response, next: NextFunction) => {
       res.json({ message: 'Logged out successfully' });
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /auth/me  –  Delete the authenticated user's account
+// ---------------------------------------------------------------------------
+
+router.delete('/me', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user as User;
+
+    // Delete the user row; ON DELETE CASCADE / SET NULL handles child rows.
+    await pool.query('DELETE FROM users WHERE id = $1', [user.id]);
+
+    // Destroy the session and clear the cookie so the client is logged out.
+    req.logout((logoutErr) => {
+      if (logoutErr) return next(logoutErr);
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) return next(destroyErr);
+        res.clearCookie('connect.sid');
+        res.json({ success: true, message: 'Account deleted successfully.' });
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---------------------------------------------------------------------------
