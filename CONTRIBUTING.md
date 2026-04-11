@@ -1,70 +1,179 @@
-# Contributing to Leaflet
+# Contributing To Leaflet 🌱💌
 
-Thank you for contributing! Please read this guide before opening a pull request.
+Thanks for contributing to Leaflet.
 
-## Development Setup
+This guide explains how to run the project locally, verify changes, and submit pull requests without regressing auth, OAuth, or CI behavior.
+
+## Development Principles
+
+- Keep changes focused and easy to reason about.
+- Preserve privacy-first behavior.
+- Prefer integration tests for behavior changes.
+- Avoid introducing compatibility shortcuts that weaken auth, scope checks, role checks, or CSRF behavior.
+- Update API docs from `backend/src/openapi.ts` instead of editing generated output.
+
+## Repository Layout
+
+- `backend`: Express + TypeScript + PostgreSQL API
+- `frontend`: React + Vite application
+- `cli`: TypeScript CLI that talks to the backend over HTTP
+- `e2e`: Playwright end-to-end suite covering backend, frontend, and CLI together
+
+## Prerequisites
+
+- Node.js 20 recommended
+- npm
+- Docker
+- PostgreSQL with `psql` available if you run backend migrations or e2e outside Docker
+- `act` optional for local GitHub Actions verification
+
+## Initial Setup
+
+1. Clone the repository.
+2. Install dependencies from the workspace root:
 
 ```bash
-git clone https://github.com/NNTin/leaflet
-cd leaflet
 npm install
 ```
 
-Start the backend in development mode:
+## Run The Project
+
+### Option 1: Local Services
+
+This is the easiest setup for normal development.
+
+Backend:
 
 ```bash
-cd backend
-npm run dev
+npm run dev --workspace backend
 ```
 
-## Running Tests
+Frontend:
 
 ```bash
-npm run test --workspace backend
-npm run test --workspace cli
+npm run dev --workspace frontend
 ```
 
-## Linting
+CLI:
+
+```bash
+npm run build --workspace cli
+node cli/dist/index.js --help
+```
+
+### Option 2: Docker Compose
+
+The checked-in Compose setup is production-shaped, not local-dev-shaped.
+
+- It expects a root `.env` with required variables.
+- It expects the external Docker network `lair-network` to already exist.
+- It uses `expose` instead of `ports`, so host ports are not published by default.
+
+Start it from the repository root:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 backend frontend postgres
+```
+
+If you need host-accessible ports for browser work, use a temporary Compose override that adds `ports`.
+
+## Database Migrations
+
+Apply SQL migrations from a shell where PostgreSQL tools are available:
+
+```bash
+npm run migrate --workspace backend
+```
+
+Notes:
+
+- The backend container does not include `psql`.
+- If you use Docker, run migrations from the host or the Postgres container instead.
+- Reused Postgres volumes do not replay init scripts automatically.
+
+## Quality Checks
+
+Run these before opening a pull request:
 
 ```bash
 npm run lint --workspace backend
 npm run lint --workspace frontend
 npm run lint --workspace cli
-```
-
-## Building
-
-```bash
 npm run build --workspace backend
+npm run test --workspace backend
+npm run test --workspace cli
 npm run build --workspace cli
 ```
 
-## OpenAPI Specification
+## End-To-End Tests
 
-The OpenAPI spec is **generated from code**, not hand-edited.
+Run the full stack suite from the repository root:
 
-**Source of truth:** `backend/src/openapi.ts`
+```bash
+npm run test:e2e
+```
 
-- Edit `backend/src/openapi.ts` to add, change, or remove API documentation.
-- Do **not** edit a hand-written YAML file — `openapi.yaml` has been removed.
-- The spec is imported at runtime and also written to `dist/openapi.json` during build.
-- Run `npm run build --workspace backend` to regenerate `dist/openapi.json`.
-- The `/api/openapi.json` endpoint and `/api-docs` Swagger UI both reflect the generated spec.
+Local e2e notes:
 
-When adding a new route, add the corresponding path entry in `openapi.ts` to keep the spec in sync.
+- The e2e suite builds backend, frontend, and CLI before running Playwright.
+- It expects PostgreSQL to be reachable locally for the `leaflet` user.
+- On a fresh machine, install Playwright Chromium once:
 
-## Engineering Standards
+```bash
+cd e2e
+npx playwright install chromium
+```
 
-See [AGENTS.md](./AGENTS.md) for the full list of non-negotiable engineering standards, including
-type safety, testing strategy, API-first design, and error handling conventions.
+## CI And `act`
 
-## Definition of Done
+GitHub Actions CI is defined in `.github/workflows/ci.yml`.
 
-A change is complete only when:
+It validates:
 
-- [ ] Fully typed (no unsafe types, `strict: true`)
-- [ ] Integration tests added/updated
-- [ ] API contract updated in `backend/src/openapi.ts` if routes changed
-- [ ] Errors handled with the standard `{ success, error, hint }` format
-- [ ] No impact on privacy guarantees
-- [ ] Lint and tests pass
+- backend build and tests
+- frontend typecheck and build
+- CLI build and tests
+- Playwright e2e with PostgreSQL
+
+To run the same CI job locally with `act`:
+
+```bash
+act pull_request -W .github/workflows/ci.yml -j build-test
+```
+
+Repository-local `act` notes:
+
+- `.actrc` is checked in and pins the recommended `ubuntu-latest` image.
+- `.github/act.env` is checked in as an intentionally minimal env file.
+- That empty env file prevents your root `.env` from leaking production-like secrets or provider credentials into the local CI simulation.
+- `act` requires Docker.
+- `act` may print cache warnings from `actions/setup-node`; those warnings are expected because GitHub's cache service is not available locally.
+
+## OpenAPI
+
+The OpenAPI spec is generated from code.
+
+- Source of truth: `backend/src/openapi.ts`
+- Generated output: `backend/dist/openapi.json`
+- Regenerate it with:
+
+```bash
+npm run build --workspace backend
+```
+
+## Pull Request Checklist
+
+- Change is fully typed and passes TypeScript checks.
+- Tests were added or updated for non-trivial behavior changes.
+- Browser-session and OAuth Bearer auth paths were both verified when auth-related code changed.
+- Lint, tests, and required builds pass locally.
+- No sensitive data is logged.
+- API behavior remains documented when routes or payloads change.
+
+## Commit And Review Guidance
+
+- Keep commits small and descriptive.
+- Include a clear problem statement in the pull request description.
+- Mention any migration, auth, scope, role, or CI impact explicitly.
