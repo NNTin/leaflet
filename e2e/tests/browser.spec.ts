@@ -29,6 +29,16 @@ test('app loads and shows the Leaflet branding', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Leaflet', exact: true })).toBeVisible();
 });
 
+test('/developer renders the API documentation page', async ({ page }) => {
+  await page.goto(`${FRONTEND_URL}/developer`);
+  await expect(page.getByRole('heading', { name: 'Developer API' })).toBeVisible();
+});
+
+test('/expired renders the expired-link page', async ({ page }) => {
+  await page.goto(`${FRONTEND_URL}/expired`);
+  await expect(page.getByRole('heading', { name: 'Link not found' })).toBeVisible();
+});
+
 // ---------------------------------------------------------------------------
 // Logged-out navbar
 // ---------------------------------------------------------------------------
@@ -106,6 +116,48 @@ test('regular user does not see the Admin link', async ({ page, context }) => {
   await expect(page.getByRole('link', { name: 'Admin' })).not.toBeVisible();
 });
 
+test('privileged users can see the alias field on the home page', async ({ page, context }) => {
+  await loginAsTestUser(context, { username: 'aliasuser', role: 'privileged' });
+  await page.goto(FRONTEND_URL);
+  await expect(page.getByLabel(/custom alias/i)).toBeVisible();
+});
+
+test('admin users can choose a never-expiring link on the home page', async ({ page, context }) => {
+  await loginAsTestUser(context, { username: 'adminhome', role: 'admin' });
+  await page.goto(FRONTEND_URL);
+  await expect(page.getByText('Never expire')).toBeVisible();
+});
+
+test('/settings prompts anonymous users to log in', async ({ page }) => {
+  await page.goto(`${FRONTEND_URL}/settings`);
+  await expect(page.getByText('Please log in to manage your settings.')).toBeVisible();
+});
+
+test('/settings renders for an authenticated user', async ({ page, context }) => {
+  await loginAsTestUser(context, { username: 'settingsbrowser' });
+  await page.goto(`${FRONTEND_URL}/settings`);
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(page.getByText('Connected Accounts')).toBeVisible();
+});
+
+test('/admin denies anonymous users', async ({ page }) => {
+  await page.goto(`${FRONTEND_URL}/admin`);
+  await expect(page.getByRole('heading', { name: 'Access Denied' })).toBeVisible();
+});
+
+test('/admin denies non-admin users', async ({ page, context }) => {
+  await loginAsTestUser(context, { username: 'notadmin' });
+  await page.goto(`${FRONTEND_URL}/admin`);
+  await expect(page.getByRole('heading', { name: 'Access Denied' })).toBeVisible();
+});
+
+test('/admin renders the dashboard for admins', async ({ page, context }) => {
+  await loginAsTestUser(context, { username: 'adminpage', role: 'admin' });
+  await page.goto(`${FRONTEND_URL}/admin`);
+  await expect(page.getByRole('heading', { name: 'Admin Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'All Links' })).toBeVisible();
+});
+
 // ---------------------------------------------------------------------------
 // Shorten URL (authenticated via injected session)
 // ---------------------------------------------------------------------------
@@ -123,6 +175,7 @@ test('authenticated user can shorten a URL through the UI', async ({ page, conte
 
   // After a successful shorten, the app navigates to /result and shows a success message.
   await expect(page.getByRole('heading', { name: /your link is ready/i })).toBeVisible({ timeout: 10_000 });
+  await expect(page).toHaveURL(/\/result$/);
   // The short URL is displayed (points to the local backend).
   await expect(page.getByText(/localhost:3099/i)).toBeVisible();
 });
@@ -140,6 +193,7 @@ test('anonymous user can shorten a URL (no login required)', async ({ page }) =>
 
   // After shortening, the app navigates to /result and shows a success message.
   await expect(page.getByRole('heading', { name: /your link is ready/i })).toBeVisible({ timeout: 10_000 });
+  await expect(page).toHaveURL(/\/result$/);
 });
 
 // ---------------------------------------------------------------------------

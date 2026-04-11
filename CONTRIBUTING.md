@@ -36,6 +36,12 @@ This guide explains how to run the project locally, verify changes, and submit p
 npm install
 ```
 
+Workspace install rules:
+
+- This repo uses a single lockfile: `package-lock.json` at the repository root.
+- Run dependency changes from the repository root, for example `npm install --workspace frontend` or `npm install --workspace backend`.
+- Do not run Docker builds from inside `backend/` or `frontend/`; those images now build from the repository root so they can consume the shared workspace lockfile.
+
 ## Run The Project
 
 ### Option 1: Local Services
@@ -75,6 +81,13 @@ Start it from the repository root:
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=100 backend frontend postgres
+```
+
+If you want to build an individual image manually, keep the build context at the repository root:
+
+```bash
+docker build -f backend/Dockerfile .
+docker build -f frontend/Dockerfile .
 ```
 
 If you need host-accessible ports for browser work, use a temporary Compose override that adds `ports`.

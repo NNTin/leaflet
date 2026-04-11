@@ -21,6 +21,20 @@ interface Identity {
   connectedAt: string;
 }
 
+type IdentitiesResponse = Identity[] | { identities?: Identity[] };
+
+function normalizeIdentities(data: IdentitiesResponse): Identity[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data.identities)) {
+    return data.identities;
+  }
+
+  return [];
+}
+
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [identities, setIdentities] = useState<Identity[]>([])
@@ -41,8 +55,8 @@ export default function SettingsPage() {
     if (!user) return
     setLoadingIdentities(true)
     axios
-      .get<Identity[]>(authUrl('/identities'), { withCredentials: true })
-      .then((res) => setIdentities(res.data))
+      .get<IdentitiesResponse>(authUrl('/identities'), { withCredentials: true })
+      .then((res) => setIdentities(normalizeIdentities(res.data)))
       .catch(() => setError('Failed to load connected accounts.'))
       .finally(() => setLoadingIdentities(false))
   }, [user])
