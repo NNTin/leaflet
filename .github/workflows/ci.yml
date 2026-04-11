@@ -23,10 +23,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build backend Docker image
-        run: docker build --file backend/Dockerfile --tag leaflet-backend:test backend
+        run: docker build --file backend/Dockerfile --tag leaflet-backend:test .
 
       - name: Build frontend Docker image
-        run: docker build --file frontend/Dockerfile --tag leaflet-frontend:test frontend
+        run: docker build --file frontend/Dockerfile --tag leaflet-frontend:test .
 
   build-test:
     runs-on: ubuntu-latest

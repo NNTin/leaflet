@@ -13,9 +13,9 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': 'http://localhost:3001',
         '/auth': 'http://localhost:3001',
-        '/admin': 'http://localhost:3001',
+        '/admin/': 'http://localhost:3001',
         '/api-docs': 'http://localhost:3001',
-        '/s': 'http://localhost:3001',
+        '/s/': 'http://localhost:3001',
       }
     },
     test: {

@@ -265,6 +265,7 @@ const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication requests. Please try again later.' },
+  skip: () => process.env.E2E_TEST_MODE === 'true',
 });
 
 const adminRateLimiter = rateLimit({

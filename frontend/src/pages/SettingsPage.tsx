@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Navigate } from 'react-router-dom'
 import axios from 'axios'
 import Navbar from '../components/Navbar'
 import { authUrl } from '../urls'
 import { csrfHeaders } from '../api'
-import { PROVIDER_META } from '../providers'
+import { PROVIDER_META, PROVIDER_META_MAP } from '../providers'
 import styles from './SettingsPage.module.css'
 
 interface User {
@@ -39,6 +40,7 @@ export default function SettingsPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [identities, setIdentities] = useState<Identity[]>([])
   const [loadingIdentities, setLoadingIdentities] = useState(false)
+  const [availableProviders, setAvailableProviders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState<string | null>(null)
 
@@ -49,6 +51,18 @@ export default function SettingsPage() {
       .then((res) => setUser(res.data))
       .catch(() => setUser(null))
   }, [])
+
+  // Fetch which providers are configured on this server (only when authenticated).
+  useEffect(() => {
+    if (!user) return
+    axios
+      .get<{ name: string }[]>(authUrl('/providers'), { withCredentials: true })
+      .then((res) => setAvailableProviders(res.data.map((p) => p.name)))
+      .catch(() => {
+        // Fall back to showing all known providers so the page isn't empty.
+        setAvailableProviders(PROVIDER_META.map((p) => p.name))
+      })
+  }, [user])
 
   // Fetch connected identities once user is known.
   const fetchIdentities = useCallback(() => {
@@ -107,29 +121,9 @@ export default function SettingsPage() {
     )
   }
 
+  // Redirect unauthenticated visitors to the home page.
   if (!user) {
-    return (
-      <div className={styles.page}>
-        <Navbar user={null} />
-        <main className={styles.main}>
-          <div className={styles.loginPrompt}>
-            <p>Please log in to manage your settings.</p>
-            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-              {PROVIDER_META.map(({ name, label, icon }) => (
-                <a
-                  key={name}
-                  href={authUrl(`/${name}`, window.location.href)}
-                  className="btn"
-                  style={{ background: 'var(--green-primary)', color: '#fff' }}
-                >
-                  {icon} {label}
-                </a>
-              ))}
-            </div>
-          </div>
-        </main>
-      </div>
-    )
+    return <Navigate to="/" replace />
   }
 
   return (
@@ -157,7 +151,10 @@ export default function SettingsPage() {
             {loadingIdentities ? (
               <div className={styles.loading}>Loading…</div>
             ) : (
-              PROVIDER_META.map(({ name, label, icon }) => {
+              availableProviders.map((name) => {
+                const meta = PROVIDER_META_MAP[name]
+                if (!meta) return null
+                const { label, icon } = meta
                 const identity = identities.find((i) => i.provider === name)
                 const isConnected = connectedProviders.has(name)
                 const isLastIdentity = identities.length <= 1

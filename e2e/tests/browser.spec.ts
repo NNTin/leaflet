@@ -128,9 +128,9 @@ test('admin users can choose a never-expiring link on the home page', async ({ p
   await expect(page.getByText('Never expire')).toBeVisible();
 });
 
-test('/settings prompts anonymous users to log in', async ({ page }) => {
+test('/settings redirects anonymous users to the home page', async ({ page }) => {
   await page.goto(`${FRONTEND_URL}/settings`);
-  await expect(page.getByText('Please log in to manage your settings.')).toBeVisible();
+  await expect(page).toHaveURL(`${FRONTEND_URL}/`);
 });
 
 test('/settings renders for an authenticated user', async ({ page, context }) => {
