@@ -1,6 +1,6 @@
 /**
  * E2E test authentication helpers.
- * Interact with the test-only /auth/e2e/login endpoint to set up sessions.
+ * Interact with the test-only /e2e/login endpoint to set up sessions.
  */
 
 import { BrowserContext } from '@playwright/test';

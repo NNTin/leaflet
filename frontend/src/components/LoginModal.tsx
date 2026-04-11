@@ -39,7 +39,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose])
 
-  // Trap focus inside modal.
+  // Set initial focus on the dialog when it opens.
   const dialogRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     dialogRef.current?.focus()
