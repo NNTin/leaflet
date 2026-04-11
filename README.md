@@ -168,7 +168,7 @@ See [cli/README.md](cli/README.md) for command details and JSON output examples.
 | `APPLE_PRIVATE_KEY` | PEM-formatted `.p8` private key (newlines escaped as `\n`) |
 | `APPLE_CALLBACK_URL` | OAuth callback URL (defaults to `PUBLIC_API_ORIGIN/auth/apple/callback`) |
 
-> **Note:** Providers are optional. If a provider's credentials are not set, its login and linking routes return `503`. Only configured providers are shown in the Connected Accounts UI.
+> **Note:** Providers are optional. If a provider's credentials are not set, its login and linking routes return `503`. The Connected Accounts UI displays all providers unconditionally; attempts to link an unconfigured provider will fail with a `503` response until the required credentials are configured.
 
 ## API Reference
 

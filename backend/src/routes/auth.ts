@@ -152,7 +152,11 @@ router.post(
   '/apple/callback',
   (req: Request, res: Response, next: NextFunction) => {
     if (!isProviderRegistered('apple')) {
-      res.status(400).json({ success: false, error: 'Apple provider is not configured.' });
+      res.status(503).json({
+        success: false,
+        error: 'Apple provider is not configured.',
+        hint: 'Configure the Apple OAuth credentials and retry the request.',
+      });
       return;
     }
 
@@ -249,6 +253,16 @@ router.get(
   '/:provider/callback',
   (req: Request, res: Response, next: NextFunction) => {
     const provider = String(req.params.provider);
+
+    // Apple uses form_post response mode — its callback must be POST.
+    if (provider === 'apple') {
+      res.status(405).json({
+        success: false,
+        error: 'Apple Sign In callbacks must use POST /auth/apple/callback.',
+        hint: 'Apple Sign In uses form_post response mode; the callback is a POST request, not a GET.',
+      });
+      return;
+    }
 
     if (!isValidProvider(provider) || !isProviderRegistered(provider)) {
       res.status(400).json({ success: false, error: 'Unknown or unconfigured provider.' });
