@@ -404,17 +404,30 @@ jest.mock('../db', () => {
       if (s.startsWith('update user_identities set user_id')) {
         const [survivingId, mergedId] = params as [number, number];
         db.userIdentities.forEach((i) => {
-          if (i.user_id === mergedId) {
-            // Skip if surviving user already has this provider.
-            const hasProvider = db.userIdentities.some(
-              (x) => x.user_id === survivingId && x.provider === i.provider,
-            );
-            if (!hasProvider) {
-              i.user_id = survivingId;
-            }
-          }
+          if (i.user_id === mergedId) i.user_id = survivingId;
         });
-        // Remove any that couldn't be moved (still belong to mergedId after conflict skip).
+        return { rows: [] };
+      }
+
+      // user_identities: delete duplicate providers before merge
+      if (s.startsWith('delete from user_identities') && s.includes('and provider in')) {
+        const [survivingId, mergedId] = params as [number, number];
+        const survivorProviders = new Set(
+          db.userIdentities.filter((i) => i.user_id === survivingId).map((i) => i.provider),
+        );
+        db.userIdentities = db.userIdentities.filter(
+          (i) => !(i.user_id === mergedId && survivorProviders.has(i.provider)),
+        );
+        return { rowCount: 0, rows: [] };
+      }
+
+      // oauth_consents: delete duplicates before merge
+      if (s.startsWith('delete from oauth_consents') && s.includes('and client_id in')) {
+        return { rows: [] };
+      }
+
+      // oauth_consents: update user_id on merge
+      if (s.startsWith('update oauth_consents set user_id')) {
         return { rows: [] };
       }
 
@@ -433,11 +446,6 @@ jest.mock('../db', () => {
         db.oauthClients.forEach((c) => {
           if (c.user_id === mergedId) c.user_id = survivingId;
         });
-        return { rows: [] };
-      }
-
-      // oauth_consents: move on merge
-      if (s.startsWith('update oauth_consents set user_id')) {
         return { rows: [] };
       }
 

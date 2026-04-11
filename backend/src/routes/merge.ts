@@ -161,9 +161,18 @@ router.post('/confirm', requireAuth, async (req: Request, res: Response, next: N
     await client.query('BEGIN');
 
     // 1. Move identities.
+    // Delete merged-user identities for providers the surviving user already has
+    // (to avoid violating the (user_id, provider) unique constraint on UPDATE).
     await client.query(
-      `UPDATE user_identities SET user_id = $1 WHERE user_id = $2
-       ON CONFLICT (user_id, provider) DO NOTHING`,
+      `DELETE FROM user_identities
+       WHERE user_id = $2
+         AND provider IN (
+           SELECT provider FROM user_identities WHERE user_id = $1
+         )`,
+      [survivingUserId, mergedUserId],
+    );
+    await client.query(
+      `UPDATE user_identities SET user_id = $1 WHERE user_id = $2`,
       [survivingUserId, mergedUserId],
     );
 
@@ -179,10 +188,18 @@ router.post('/confirm', requireAuth, async (req: Request, res: Response, next: N
       [survivingUserId, mergedUserId],
     );
 
-    // 4. Move OAuth consents (upsert: skip if surviving user already has the same client consent).
+    // 4. Move OAuth consents.
+    // Delete duplicate consents first (surviving user already has same client_id).
     await client.query(
-      `UPDATE oauth_consents SET user_id = $1 WHERE user_id = $2
-       ON CONFLICT (user_id, client_id) DO NOTHING`,
+      `DELETE FROM oauth_consents
+       WHERE user_id = $2
+         AND client_id IN (
+           SELECT client_id FROM oauth_consents WHERE user_id = $1
+         )`,
+      [survivingUserId, mergedUserId],
+    );
+    await client.query(
+      `UPDATE oauth_consents SET user_id = $1 WHERE user_id = $2`,
       [survivingUserId, mergedUserId],
     );
 

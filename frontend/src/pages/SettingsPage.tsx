@@ -112,7 +112,19 @@ export default function SettingsPage() {
         <Navbar user={null} />
         <main className={styles.main}>
           <div className={styles.loginPrompt}>
-            <p>Please <a href={authUrl('/github', window.location.href)}>log in</a> to manage your settings.</p>
+            <p>Please log in to manage your settings.</p>
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              {PROVIDERS.map(({ name, label, icon }) => (
+                <a
+                  key={name}
+                  href={authUrl(`/${name}`, window.location.href)}
+                  className="btn"
+                  style={{ background: 'var(--green-primary)', color: '#fff' }}
+                >
+                  {icon} {label}
+                </a>
+              ))}
+            </div>
           </div>
         </main>
       </div>
