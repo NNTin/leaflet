@@ -322,6 +322,10 @@ process.env.PUBLIC_SHORT_URL_BASE = 'https://leaflet.lair.nntin.xyz/s';
 process.env.PUBLIC_API_ORIGIN = 'https://leaflet.lair.nntin.xyz';
 process.env.DEFAULT_FRONTEND_URL = 'http://localhost:5173';
 
+const { validateOAuthReturnTo } = require('../config') as {
+  validateOAuthReturnTo: (rawReturnTo: string | undefined) => string | null;
+};
+
 import app, { sessionStore } from '../app';
 
 function makeAdminUser(): UserRecord {
@@ -860,6 +864,22 @@ describe('GET /api/openapi.json', () => {
 // ============================================================================
 
 describe('GET /oauth/authorize', () => {
+  it('redirects unauthenticated users to GitHub with an /oauth/authorize returnTo path', async () => {
+    makeOAuthClient({
+      client_id: 'leaflet-cli',
+      is_public: true,
+      redirect_uris: ['http://127.0.0.1'],
+    });
+
+    const res = await request(app).get(
+      '/oauth/authorize?response_type=code&client_id=leaflet-cli&redirect_uri=http://127.0.0.1:43589/callback&scope=shorten:create&state=test-state&code_challenge=test-challenge&code_challenge_method=S256',
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('/auth/github?returnTo=');
+    expect(decodeURIComponent(res.headers.location)).toContain('/oauth/authorize?response_type=code');
+  });
+
   it('returns 400 when client_id is missing', async () => {
     const res = await request(app).get('/oauth/authorize?response_type=code&redirect_uri=http://localhost:3000/cb&scope=shorten:create');
     expect(res.status).toBe(400);
@@ -878,6 +898,13 @@ describe('GET /oauth/authorize', () => {
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_request');
+  });
+});
+
+describe('OAuth returnTo validation', () => {
+  it('normalizes relative returnTo paths to the backend origin', () => {
+    const resolved = validateOAuthReturnTo('/oauth/authorize?response_type=code');
+    expect(resolved).toBe('https://leaflet.lair.nntin.xyz/oauth/authorize?response_type=code');
   });
 });
 

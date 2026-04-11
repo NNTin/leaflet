@@ -43,7 +43,14 @@ const app = express();
 
 const trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : (process.env.NODE_ENV === 'test' ? 1 : 0);
 app.set('trust proxy', trustProxy);
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      // OAuth consent redirects to local loopback callback URLs for PKCE CLI login.
+      formAction: ["'self'", 'http://127.0.0.1:*', 'http://localhost:*'],
+    },
+  },
+}));
 
 const corsOptions: CorsOptions = {
   origin(origin, callback) {

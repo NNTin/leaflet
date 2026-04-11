@@ -60,7 +60,7 @@ services:
       - lair-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.leaflet-backend.rule=Host(`leaflet.lair.nntin.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/admin/`) || PathPrefix(`/api-docs`) || PathPrefix(`/s/`))"
+      - "traefik.http.routers.leaflet-backend.rule=Host(`leaflet.lair.nntin.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/auth`) || PathPrefix(`/oauth`) || PathPrefix(`/admin/`) || PathPrefix(`/api-docs`) || PathPrefix(`/s/`))"
       - "traefik.http.routers.leaflet-backend.entrypoints=websecure"
       - "traefik.http.routers.leaflet-backend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.leaflet-backend.service=leaflet-backend"

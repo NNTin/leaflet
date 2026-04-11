@@ -256,7 +256,7 @@ router.get(
 
       // Require the user to be logged in via session.
       if (!req.isAuthenticated()) {
-        const returnTo = req.url;
+        const returnTo = req.originalUrl;
         req.session.oauthReturnTo = returnTo;
         req.session.save((err) => {
           if (err) return next(err);

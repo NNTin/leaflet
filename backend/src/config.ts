@@ -77,7 +77,11 @@ export function validateOAuthReturnTo(rawReturnTo: string | undefined): string |
   if (!rawReturnTo) return null;
 
   try {
-    const url = new URL(rawReturnTo);
+    const normalizedReturnTo = rawReturnTo.startsWith('/')
+      ? new URL(rawReturnTo, `${publicApiOrigin}/`).toString()
+      : rawReturnTo;
+
+    const url = new URL(normalizedReturnTo);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     if (!isAllowedFrontendOrigin(url.origin)) return null;
     if (!allowsReturnPath(url)) return null;

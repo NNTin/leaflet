@@ -121,7 +121,7 @@ test('auth login completes the PKCE OAuth flow and stores OAuth credentials', as
       },
       exchangeCodeForTokens: async (params: Record<string, string>) => {
         assert.equal(params.code, 'auth-code');
-        assert.equal(params.redirectUri, 'http://localhost:43123/callback');
+        assert.equal(params.redirectUri, 'http://127.0.0.1:43123/callback');
         assert.equal(params.codeVerifier, 'verifier-value');
         return oauthTokenResponse({
           scope: 'shorten:create shorten:create:alias urls:delete user:read',
@@ -136,7 +136,7 @@ test('auth login completes the PKCE OAuth flow and stores OAuth credentials', as
   const authorizeUrl = new URL(openedUrl);
   assert.equal(authorizeUrl.pathname, '/oauth/authorize');
   assert.equal(authorizeUrl.searchParams.get('client_id'), 'leaflet-cli');
-  assert.equal(authorizeUrl.searchParams.get('redirect_uri'), 'http://localhost:43123/callback');
+  assert.equal(authorizeUrl.searchParams.get('redirect_uri'), 'http://127.0.0.1:43123/callback');
   assert.equal(authorizeUrl.searchParams.get('code_challenge'), 'challenge-value');
   assert.equal(
     authorizeUrl.searchParams.get('scope'),
@@ -206,6 +206,58 @@ test('auth login rejects the removed legacy --token option', async () => {
 
   const storedConfig = await readStoredConfig(homeDir);
   assert.equal(storedConfig.oauth, undefined);
+});
+
+test('auth login passes a fixed callback port to the callback server when requested', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([]);
+  let receivedPort: number | undefined;
+
+  const result = await invokeCli([
+    'auth',
+    'login',
+    '--callback-port',
+    '43189',
+    '--json',
+  ], {
+    homeDir,
+    fetchStub,
+    oauthDeps: {
+      generateCodeVerifier: () => 'verifier-value',
+      computeCodeChallenge: () => 'challenge-value',
+      generateState: () => 'state-value',
+      startCallbackServer: (_expectedState: string, _timeoutMs = 120_000, listenPort?: number) => {
+        receivedPort = listenPort;
+        return {
+          port: Promise.resolve(43189),
+          result: Promise.resolve('auth-code'),
+        };
+      },
+      openBrowser: async () => undefined,
+      exchangeCodeForTokens: async () => oauthTokenResponse(),
+    },
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(receivedPort, 43189);
+});
+
+test('auth login rejects invalid callback ports', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([]);
+
+  const result = await invokeCli([
+    'auth',
+    'login',
+    '--callback-port',
+    '70000',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 1);
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, false);
+  assert.match(String(payload.error), /Invalid callback port/i);
 });
 
 test('auth status reports anonymous mode when no OAuth credentials are configured', async () => {

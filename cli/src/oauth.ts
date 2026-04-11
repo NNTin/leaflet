@@ -8,6 +8,7 @@
 import http from 'http';
 import crypto from 'crypto';
 import { URL } from 'url';
+import type net from 'net';
 
 /** Stored OAuth token set, persisted in ~/.leafletrc under `oauth`. */
 export interface StoredOAuth {
@@ -77,6 +78,7 @@ h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#555}</style></head>
 export function startCallbackServer(
   expectedState: string,
   timeoutMs = 120_000,
+  listenPort?: number,
 ): { port: Promise<number>; result: Promise<string> } {
   let portResolve!: (port: number) => void;
   let codeResolve!: (code: string) => void;
@@ -87,6 +89,29 @@ export function startCallbackServer(
     codeResolve = res;
     reject = rej;
   });
+
+  const sockets = new Set<net.Socket>();
+  let settled = false;
+  let timeout: NodeJS.Timeout;
+
+  function settle(settler: () => void): void {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+
+    // Stop accepting new connections immediately.
+    server.close();
+
+    // Ensure keep-alive sockets don't keep the process alive after success.
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+
+    settler();
+  }
 
   const server = http.createServer((req, res) => {
     if (!req.url) {
@@ -107,38 +132,41 @@ export function startCallbackServer(
     const returnedState = parsed.searchParams.get('state');
 
     if (error) {
-      res.writeHead(400, { 'Content-Type': 'text/html' });
+      res.writeHead(400, { 'Content-Type': 'text/html', Connection: 'close' });
       res.end(callbackHtml('Authorization denied', `The authorization request was denied: <code>${escapeHtml(error)}</code>. You can close this tab.`));
-      server.close();
-      reject(new Error(`Authorization denied: ${error}`));
+      settle(() => reject(new Error(`Authorization denied: ${error}`)));
       return;
     }
 
     if (!code || returnedState !== expectedState) {
-      res.writeHead(400, { 'Content-Type': 'text/html' });
+      res.writeHead(400, { 'Content-Type': 'text/html', Connection: 'close' });
       res.end(callbackHtml('Invalid response', 'Unexpected response from the authorization server. You can close this tab.'));
-      server.close();
-      reject(new Error('Invalid OAuth callback: missing code or state mismatch'));
+      settle(() => reject(new Error('Invalid OAuth callback: missing code or state mismatch')));
       return;
     }
 
-    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.writeHead(200, { 'Content-Type': 'text/html', Connection: 'close' });
     res.end(callbackHtml('Authorization successful', 'You have successfully authorized the Leaflet CLI. You can close this tab.'));
-    server.close();
-    codeResolve(code);
+    settle(() => codeResolve(code));
   });
 
-  const timeout = setTimeout(() => {
-    server.close();
-    reject(new Error('OAuth login timed out. No callback received within 2 minutes.'));
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => {
+      sockets.delete(socket);
+    });
+  });
+
+  timeout = setTimeout(() => {
+    settle(() => reject(new Error('OAuth login timed out. No callback received within 2 minutes.')));
   }, timeoutMs);
 
-  server.on('close', () => clearTimeout(timeout));
-  server.on('error', (err) => reject(err as Error));
+  server.on('error', (err) => settle(() => reject(err as Error)));
 
-  server.listen(0, '127.0.0.1', () => {
+  server.listen(listenPort ?? 0, '127.0.0.1', () => {
     const addr = server.address() as { port: number };
     portResolve(addr.port);
+    server.unref();
   });
 
   return { port: portPromise, result: resultPromise };

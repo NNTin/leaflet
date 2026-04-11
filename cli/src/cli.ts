@@ -31,6 +31,8 @@ type ShortenOptions = SharedOptions & {
 type AuthLoginOptions = SharedOptions & {
   /** Client ID for the OAuth PKCE flow (defaults to the built-in leaflet-cli client). */
   clientId?: string;
+  /** Optional fixed local callback port for remote SSH forwarding workflows. */
+  callbackPort?: string;
 };
 
 type DeleteOptions = SharedOptions;
@@ -564,6 +566,18 @@ async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): 
   });
 
   const clientId = options.clientId ?? 'leaflet-cli';
+  let callbackListenPort: number | undefined;
+  if (options.callbackPort) {
+    const parsedPort = Number.parseInt(options.callbackPort, 10);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      throw new CliError(`Invalid callback port "${options.callbackPort}".`, {
+        hint: 'Use a numeric TCP port between 1 and 65535.',
+        usage: HELP_BY_COMMAND['auth login'].usage,
+        example: 'leaflet-cli auth login --callback-port 43189',
+      });
+    }
+    callbackListenPort = parsedPort;
+  }
   const codeVerifier = oauthDeps.generateCodeVerifier();
   const codeChallenge = oauthDeps.computeCodeChallenge(codeVerifier);
   const state = oauthDeps.generateState();
@@ -571,9 +585,13 @@ async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): 
 
   output.info('Starting OAuth browser login. A browser window will open for you to authorize the CLI.');
 
-  const { port: portPromise, result: codePromise } = oauthDeps.startCallbackServer(state);
+  const { port: portPromise, result: codePromise } = oauthDeps.startCallbackServer(
+    state,
+    120_000,
+    callbackListenPort,
+  );
   const callbackPort = await portPromise;
-  const redirectUri = `http://localhost:${callbackPort}/callback`;
+  const redirectUri = `http://127.0.0.1:${callbackPort}/callback`;
 
   const authorizeUrl = new URL(`${resolvedConfig.server}/oauth/authorize`);
   authorizeUrl.searchParams.set('response_type', 'code');
@@ -585,6 +603,7 @@ async function handleAuthLogin(options: AuthLoginOptions, runtime: CliRuntime): 
   authorizeUrl.searchParams.set('code_challenge_method', 'S256');
 
   output.info(`Authorization URL:\n  ${authorizeUrl.toString()}`);
+  output.info(`Callback URL:\n  ${redirectUri}`);
 
   try {
     await oauthDeps.openBrowser(authorizeUrl.toString());
@@ -842,9 +861,11 @@ Examples:
       .command('login')
       .description('Authenticate via the OAuth browser flow.')
       .option('--client-id <clientId>', 'OAuth client ID (default: leaflet-cli)')
+      .option('--callback-port <port>', 'Fixed localhost callback port (useful over SSH with forwarded ports)')
       .addHelpText('after', `
 Examples:
   leaflet-cli auth login
+  leaflet-cli auth login --callback-port 43189
 `)
   ).action(async (options: AuthLoginOptions) => {
     await handleAuthLogin(options, runtime);
