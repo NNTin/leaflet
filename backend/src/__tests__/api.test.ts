@@ -181,6 +181,12 @@ jest.mock('../db', () => {
         return { rows: db.users.filter(u => u.id === Number(id)) };
       }
 
+      if (s.startsWith('select 1 from users where id')) {
+        const [id] = params as [number];
+        const found = db.users.find(u => u.id === Number(id));
+        return { rows: found ? [{ 1: 1 }] : [] };
+      }
+
       if (s.startsWith('select') && s.includes('from users')) {
         return { rows: db.users };
       }
@@ -389,7 +395,19 @@ jest.mock('../db', () => {
         return { rows: [{ count: String(count) }] };
       }
 
-      // user_identities: delete
+      // user_identities: delete duplicate providers before merge (specific check MUST come first)
+      if (s.startsWith('delete from user_identities') && s.includes('and provider in')) {
+        const [survivingId, mergedId] = params as [number, number];
+        const survivorProviders = new Set(
+          db.userIdentities.filter((i) => i.user_id === survivingId).map((i) => i.provider),
+        );
+        db.userIdentities = db.userIdentities.filter(
+          (i) => !(i.user_id === mergedId && survivorProviders.has(i.provider)),
+        );
+        return { rowCount: 0, rows: [] };
+      }
+
+      // user_identities: disconnect (generic delete by user_id + provider)
       if (s.startsWith('delete from user_identities')) {
         const [userId, provider] = params as [number, string];
         const idx = db.userIdentities.findIndex(
@@ -407,18 +425,6 @@ jest.mock('../db', () => {
           if (i.user_id === mergedId) i.user_id = survivingId;
         });
         return { rows: [] };
-      }
-
-      // user_identities: delete duplicate providers before merge
-      if (s.startsWith('delete from user_identities') && s.includes('and provider in')) {
-        const [survivingId, mergedId] = params as [number, number];
-        const survivorProviders = new Set(
-          db.userIdentities.filter((i) => i.user_id === survivingId).map((i) => i.provider),
-        );
-        db.userIdentities = db.userIdentities.filter(
-          (i) => !(i.user_id === mergedId && survivorProviders.has(i.provider)),
-        );
-        return { rowCount: 0, rows: [] };
       }
 
       // oauth_consents: delete duplicates before merge
@@ -2013,5 +2019,54 @@ describe('GET /auth/me - session-based browser auth (no OAuth scope required)', 
     const res = await request(app).get('/auth/me');
     expect(res.status).toBe(200);
     expect(res.body).toBeNull();
+  });
+});
+
+describe('POST /auth/merge/confirm - duplicate provider handling', () => {
+  it('deduplicates providers when both users share the same provider before merging', async () => {
+    const userA = makeRegularUser();
+    const userB = makeRegularUser();
+
+    // Both users have github identity; userB also has google.
+    makeIdentity(userA.id, 'github', 'gh-a');
+    makeIdentity(userB.id, 'github', 'gh-b');
+    makeIdentity(userB.id, 'google', 'google-b');
+
+    const { agent, csrfToken } = await createAuthenticatedSession(userA, '10.101.7.1');
+
+    // Initiate merge.
+    const initiateRes = await agent
+      .post('/auth/merge/initiate')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.7.1')
+      .send({ targetUserId: userB.id });
+    expect(initiateRes.status).toBe(200);
+    const { mergeToken } = initiateRes.body as { mergeToken: string };
+
+    // Confirm merge.
+    const confirmRes = await agent
+      .post('/auth/merge/confirm')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.101.7.1')
+      .send({ mergeToken });
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.success).toBe(true);
+
+    // userA keeps their own github identity (userB's conflicting github is dropped).
+    const githubIdentities = db.userIdentities.filter(
+      (i) => i.provider === 'github' && i.user_id === userA.id,
+    );
+    expect(githubIdentities).toHaveLength(1);
+    expect(githubIdentities[0].provider_user_id).toBe('gh-a');
+
+    // userB's google identity is moved to userA.
+    const googleIdentity = db.userIdentities.find(
+      (i) => i.provider === 'google' && i.user_id === userA.id,
+    );
+    expect(googleIdentity).toBeDefined();
+    expect(googleIdentity?.provider_user_id).toBe('google-b');
+
+    // userB is deleted.
+    expect(db.users.find((u) => u.id === userB.id)).toBeUndefined();
   });
 });

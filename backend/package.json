@@ -31,7 +31,7 @@
     "nanoid": "^3.3.7",
     "passport": "^0.7.0",
     "passport-apple": "^2.0.2",
-    "passport-discord": "^0.1.4",
+    "passport-discord": "npm:passport-discord-auth@^1.2.0",
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
     "passport-microsoft": "^2.1.0",

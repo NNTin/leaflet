@@ -99,7 +99,6 @@ router.post('/initiate', requireAuth, async (req: Request, res: Response, next: 
 // ---------------------------------------------------------------------------
 
 router.post('/confirm', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
-  const client = await pool.connect();
   try {
     const currentUser = req.user as User;
     const rawToken: unknown = req.body?.mergeToken;
@@ -149,99 +148,107 @@ router.post('/confirm', requireAuth, async (req: Request, res: Response, next: N
     const survivingUserId = currentUser.id;
     const mergedUserId = pendingMerge.targetUserId;
 
-    // Verify the target still exists.
-    const targetCheck = await pool.query(`SELECT * FROM users WHERE id = $1`, [mergedUserId]);
-    if (targetCheck.rows.length === 0) {
+    // All validations passed — acquire a connection for the transaction.
+    const client = await pool.connect();
+    try {
+      // ---- Execute the merge in a transaction ----
+      await client.query('BEGIN');
+
+      // Verify the target still exists using the same transaction client.
+      // SELECT 1 is a lightweight existence check — we only need to know the row is present.
+      const targetCheck = await client.query(`SELECT 1 FROM users WHERE id = $1`, [mergedUserId]);
+      if (targetCheck.rows.length === 0) {
+        delete req.session.pendingMerge;
+        await client.query('ROLLBACK');
+        res.status(404).json({ success: false, error: 'Target user no longer exists.' });
+        return;
+      }
+
+      // 1. Move identities.
+      // Delete merged-user identities for providers the surviving user already has
+      // (to avoid violating the (user_id, provider) unique constraint on UPDATE).
+      await client.query(
+        `DELETE FROM user_identities
+         WHERE user_id = $2
+           AND provider IN (
+             SELECT provider FROM user_identities WHERE user_id = $1
+           )`,
+        [survivingUserId, mergedUserId],
+      );
+      await client.query(
+        `UPDATE user_identities SET user_id = $1 WHERE user_id = $2`,
+        [survivingUserId, mergedUserId],
+      );
+
+      // 2. Move URLs.
+      await client.query(
+        `UPDATE urls SET user_id = $1 WHERE user_id = $2`,
+        [survivingUserId, mergedUserId],
+      );
+
+      // 3. Move OAuth clients.
+      await client.query(
+        `UPDATE oauth_clients SET user_id = $1 WHERE user_id = $2`,
+        [survivingUserId, mergedUserId],
+      );
+
+      // 4. Move OAuth consents.
+      // Delete duplicate consents first (surviving user already has same client_id).
+      await client.query(
+        `DELETE FROM oauth_consents
+         WHERE user_id = $2
+           AND client_id IN (
+             SELECT client_id FROM oauth_consents WHERE user_id = $1
+           )`,
+        [survivingUserId, mergedUserId],
+      );
+      await client.query(
+        `UPDATE oauth_consents SET user_id = $1 WHERE user_id = $2`,
+        [survivingUserId, mergedUserId],
+      );
+
+      // 5. Role resolution: surviving user keeps the highest role.
+      await client.query(
+        `UPDATE users SET role = (
+           SELECT CASE
+             WHEN 'admin' IN (u1.role, u2.role) THEN 'admin'
+             WHEN 'privileged' IN (u1.role, u2.role) THEN 'privileged'
+             ELSE 'user'
+           END
+           FROM users u1, users u2
+           WHERE u1.id = $1 AND u2.id = $2
+         )
+         WHERE id = $1`,
+        [survivingUserId, mergedUserId],
+      );
+
+      // 6. Audit log.
+      await client.query(
+        `INSERT INTO account_merge_log (surviving_user_id, merged_user_id, initiated_by)
+         VALUES ($1, $2, $3)`,
+        [survivingUserId, mergedUserId, survivingUserId],
+      );
+
+      // 7. Delete the merged user row (cascades handled by ON DELETE clauses).
+      await client.query(`DELETE FROM users WHERE id = $1`, [mergedUserId]);
+
+      await client.query('COMMIT');
+
+      // Clear session state.
       delete req.session.pendingMerge;
-      res.status(404).json({ success: false, error: 'Target user no longer exists.' });
-      return;
+      delete req.session.linkConflict;
+
+      console.info(`[merge] User ${survivingUserId} merged user ${mergedUserId} successfully.`);
+
+      res.json({ success: true, message: 'Accounts merged successfully.' });
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
     }
-
-    // ---- Execute the merge in a transaction ----
-    await client.query('BEGIN');
-
-    // 1. Move identities.
-    // Delete merged-user identities for providers the surviving user already has
-    // (to avoid violating the (user_id, provider) unique constraint on UPDATE).
-    await client.query(
-      `DELETE FROM user_identities
-       WHERE user_id = $2
-         AND provider IN (
-           SELECT provider FROM user_identities WHERE user_id = $1
-         )`,
-      [survivingUserId, mergedUserId],
-    );
-    await client.query(
-      `UPDATE user_identities SET user_id = $1 WHERE user_id = $2`,
-      [survivingUserId, mergedUserId],
-    );
-
-    // 2. Move URLs.
-    await client.query(
-      `UPDATE urls SET user_id = $1 WHERE user_id = $2`,
-      [survivingUserId, mergedUserId],
-    );
-
-    // 3. Move OAuth clients.
-    await client.query(
-      `UPDATE oauth_clients SET user_id = $1 WHERE user_id = $2`,
-      [survivingUserId, mergedUserId],
-    );
-
-    // 4. Move OAuth consents.
-    // Delete duplicate consents first (surviving user already has same client_id).
-    await client.query(
-      `DELETE FROM oauth_consents
-       WHERE user_id = $2
-         AND client_id IN (
-           SELECT client_id FROM oauth_consents WHERE user_id = $1
-         )`,
-      [survivingUserId, mergedUserId],
-    );
-    await client.query(
-      `UPDATE oauth_consents SET user_id = $1 WHERE user_id = $2`,
-      [survivingUserId, mergedUserId],
-    );
-
-    // 5. Role resolution: surviving user keeps the highest role.
-    await client.query(
-      `UPDATE users SET role = (
-         SELECT CASE
-           WHEN 'admin' IN (u1.role, u2.role) THEN 'admin'
-           WHEN 'privileged' IN (u1.role, u2.role) THEN 'privileged'
-           ELSE 'user'
-         END
-         FROM users u1, users u2
-         WHERE u1.id = $1 AND u2.id = $2
-       )
-       WHERE id = $1`,
-      [survivingUserId, mergedUserId],
-    );
-
-    // 6. Audit log.
-    await client.query(
-      `INSERT INTO account_merge_log (surviving_user_id, merged_user_id, initiated_by)
-       VALUES ($1, $2, $3)`,
-      [survivingUserId, mergedUserId, survivingUserId],
-    );
-
-    // 7. Delete the merged user row (cascades handled by ON DELETE clauses).
-    await client.query(`DELETE FROM users WHERE id = $1`, [mergedUserId]);
-
-    await client.query('COMMIT');
-
-    // Clear session state.
-    delete req.session.pendingMerge;
-    delete req.session.linkConflict;
-
-    console.info(`[merge] User ${survivingUserId} merged user ${mergedUserId} successfully.`);
-
-    res.json({ success: true, message: 'Accounts merged successfully.' });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
     next(err);
-  } finally {
-    client.release();
   }
 });
 

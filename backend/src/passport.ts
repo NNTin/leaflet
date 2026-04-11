@@ -4,7 +4,7 @@ import { User } from './models/user';
 import { registerAllProviders } from './providers/registry';
 
 // Register all configured OAuth providers (GitHub, Google, Discord, Microsoft, Apple).
-// Providers are skipped silently when their environment credentials are absent.
+// Providers are skipped with a warning when their environment credentials are absent.
 registerAllProviders();
 
 passport.serializeUser((user: Express.User, done) => {

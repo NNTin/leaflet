@@ -101,7 +101,13 @@ function normalizeAppleIdToken(idToken: string): NormalizedProfile {
   // The `sub` claim is the stable, unique Apple user identifier.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const decoded = jwt.decode(idToken) as Record<string, any> | null;
-  const sub: string = typeof decoded?.sub === 'string' ? decoded.sub : '';
+
+  const rawSub = decoded?.sub;
+  if (typeof rawSub !== 'string' || rawSub.trim() === '') {
+    throw new Error('Invalid Apple id_token: missing or empty subject claim');
+  }
+  const sub = rawSub;
+
   const email: string | null = typeof decoded?.email === 'string' ? decoded.email : null;
   const emailVerified: boolean =
     decoded?.email_verified === true || decoded?.email_verified === 'true';
@@ -267,7 +273,13 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
         process.env.GOOGLE_CALLBACK_URL || `${BASE_URL}/auth/google/callback`;
       passport.use(
         new GoogleStrategy(
-          { clientID, clientSecret, callbackURL, passReqToCallback: true },
+          {
+            clientID,
+            clientSecret,
+            callbackURL,
+            passReqToCallback: true,
+            scope: ['profile', 'email'],
+          },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           makeVerifyCallback(normalizeGoogleProfile) as any,
         ),
