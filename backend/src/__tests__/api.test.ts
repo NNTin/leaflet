@@ -1527,9 +1527,19 @@ describe('GET /auth/me', () => {
 });
 
 describe('GET /auth/providers', () => {
-  afterEach(() => {
-    // Restore REGISTERED_PROVIDERS to its original state (empty in test env).
+  let originalProviders: typeof REGISTERED_PROVIDERS;
+
+  beforeEach(() => {
+    // Snapshot the current provider list so it can be restored after each test,
+    // regardless of whether the developer has real provider credentials set.
+    originalProviders = [...REGISTERED_PROVIDERS];
     REGISTERED_PROVIDERS.length = 0;
+  });
+
+  afterEach(() => {
+    // Restore the REGISTERED_PROVIDERS array to its pre-test state.
+    REGISTERED_PROVIDERS.length = 0;
+    REGISTERED_PROVIDERS.push(...originalProviders);
   });
 
   it('returns an empty array when no providers are configured', async () => {

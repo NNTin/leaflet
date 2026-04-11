@@ -72,7 +72,7 @@ export function runCli(args: string[], homeDir: string, env: NodeJS.ProcessEnv =
  *
  * 1. Starts `leaflet-cli auth login --callback-port <port>` as a child process.
  * 2. Extracts the authorization URL from the CLI's verbose output.
- * 3. Creates a test user session via POST /auth/e2e/login.
+ * 3. Creates a test user session via POST /e2e/login.
  * 4. GETs /oauth/authorize (with session cookie) → receives consent HTML.
  * 5. POSTs /oauth/authorize/consent (with session + CSRF token).
  * 6. Follows the redirect to the CLI callback server.
@@ -172,7 +172,7 @@ async function completeOAuthFlow(
 
   const setCookieHeader = loginRes.headers.get('set-cookie');
   if (!setCookieHeader) {
-    throw new Error('No Set-Cookie from /auth/e2e/login');
+    throw new Error(`No Set-Cookie from ${BACKEND_URL}/e2e/login`);
   }
   const sessionCookie = setCookieHeader.split(';')[0].trim();
 

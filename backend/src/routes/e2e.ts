@@ -15,7 +15,7 @@ import { User } from '../models/user';
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
-// POST /auth/e2e/login
+// POST /e2e/login
 // Creates (or finds) a test user and establishes a session.
 // Returns the CSRF token so test callers can make subsequent mutation requests.
 // ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction): P
 });
 
 // ---------------------------------------------------------------------------
-// POST /auth/e2e/reset
+// POST /e2e/reset
 // Truncates all user/URL data and re-seeds the built-in OAuth client.
 // Useful for resetting state between test runs without restarting the process.
 // ---------------------------------------------------------------------------

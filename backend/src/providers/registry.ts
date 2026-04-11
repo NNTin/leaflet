@@ -221,6 +221,10 @@ function makeAppleVerifyCallback() {
 
 export const REGISTERED_PROVIDERS: ProviderName[] = [];
 
+export function listRegisteredProviders(): ProviderName[] {
+  return [...REGISTERED_PROVIDERS];
+}
+
 interface ProviderConfig {
   name: ProviderName;
   register: () => void;

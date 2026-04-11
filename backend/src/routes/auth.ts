@@ -4,7 +4,7 @@ import { User } from '../models/user';
 import { ProviderName, listIdentitiesForUser, deleteIdentity, countIdentitiesForUser } from '../models/identity';
 import { addAuthFailureParam, defaultFrontendUrl, resolveOAuthReturnTo } from '../config';
 import { ensureScopeForOAuthRequest, requireAuth } from '../middleware/auth';
-import { isProviderRegistered, REGISTERED_PROVIDERS } from '../providers/registry';
+import { isProviderRegistered, listRegisteredProviders } from '../providers/registry';
 
 const router = express.Router();
 
@@ -49,7 +49,7 @@ function getAuthOptions(provider: ProviderName): object {
 // ---------------------------------------------------------------------------
 
 router.get('/providers', (_req: Request, res: Response) => {
-  const providers = REGISTERED_PROVIDERS.map((name) => ({
+  const providers = listRegisteredProviders().map((name) => ({
     name,
     label: PROVIDER_LABELS[name],
   }));
