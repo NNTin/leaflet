@@ -166,10 +166,22 @@ router.post('/logout', (req: Request, res: Response, next: NextFunction) => {
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /auth/me  –  Delete the authenticated user's account
+// DELETE /auth/me  –  Delete the authenticated user's account (session auth only)
 // ---------------------------------------------------------------------------
 
 router.delete('/me', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  // OAuth bearer tokens must not be able to delete an account — this is a
+  // browser-session-only destructive action. The CSRF middleware already
+  // skips CSRF for OAuth requests, so an additional check here is required.
+  if (req.oauthAuthenticated) {
+    res.status(403).json({
+      success: false,
+      error: 'Account deletion requires a browser session.',
+      hint: 'Log in via a browser session to delete your account.',
+    });
+    return;
+  }
+
   try {
     const user = req.user as User;
 

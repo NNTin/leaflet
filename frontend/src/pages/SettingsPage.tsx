@@ -4,7 +4,7 @@ import axios from 'axios'
 import Navbar from '../components/Navbar'
 import { authUrl } from '../urls'
 import { csrfHeaders } from '../api'
-import { meCache, providersCache } from '../authCache'
+import { meCache, providersCache, MISS } from '../authCache'
 import { PROVIDER_META_MAP } from '../providers'
 import styles from './SettingsPage.module.css'
 
@@ -98,7 +98,7 @@ export default function SettingsPage() {
   // Fetch current user (with cache).
   useEffect(() => {
     const cached = meCache.get()
-    if (cached !== null) {
+    if (cached !== MISS) {
       setUser(cached)
       return
     }
@@ -116,7 +116,7 @@ export default function SettingsPage() {
     if (!user) return
 
     const cached = providersCache.get()
-    if (cached !== null) {
+    if (cached !== MISS) {
       setAvailableProviders(cached)
       return
     }
@@ -443,7 +443,13 @@ export default function SettingsPage() {
       </main>
 
       {showDeleteModal && (
-        <div className={styles.modalBackdrop} role="presentation" onClick={(e) => { if (e.target === e.currentTarget) closeDeleteModal() }}>
+        <div
+          className={styles.modalBackdrop}
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleting) closeDeleteModal()
+          }}
+        >
           <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
             <h2 id="delete-modal-title" className={styles.modalTitle}>Delete Account</h2>
             <p className={styles.modalBody}>

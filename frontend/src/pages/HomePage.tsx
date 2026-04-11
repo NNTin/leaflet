@@ -4,7 +4,7 @@ import axios from 'axios'
 import Navbar from '../components/Navbar'
 import api from '../api'
 import { authUrl } from '../urls'
-import { meCache } from '../authCache'
+import { meCache, MISS } from '../authCache'
 import styles from './HomePage.module.css'
 
 interface TtlOption {
@@ -43,7 +43,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const cached = meCache.get()
-    if (cached !== null) {
+    if (cached !== MISS) {
       setUser(cached)
       return
     }

@@ -267,7 +267,10 @@ const authRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication requests. Please try again later.' },
-  skip: () => process.env.E2E_TEST_MODE === 'true',
+  skip: (req: Request) =>
+    process.env.E2E_TEST_MODE === 'true' ||
+    req.path === '/me' ||
+    req.path === '/providers',
 });
 
 // Lighter rate limiter for read-only, cacheable auth endpoints (/auth/me, /auth/providers).

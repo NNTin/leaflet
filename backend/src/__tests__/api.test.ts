@@ -2223,4 +2223,17 @@ describe('DELETE /auth/me - account deletion', () => {
 
     expect(res.status).toBe(401);
   });
+
+  it('returns 403 when called with OAuth bearer token', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['user:read']);
+
+    const res = await request(app)
+      .delete('/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.102.1.3');
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
 });
