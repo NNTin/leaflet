@@ -3,6 +3,7 @@ import axios from 'axios'
 import Navbar from '../components/Navbar'
 import { authUrl } from '../urls'
 import { csrfHeaders } from '../api'
+import { PROVIDER_META } from '../providers'
 import styles from './SettingsPage.module.css'
 
 interface User {
@@ -19,20 +20,6 @@ interface Identity {
   emailVerified: boolean;
   connectedAt: string;
 }
-
-interface Provider {
-  name: string;
-  label: string;
-  icon: string;
-}
-
-const PROVIDERS: Provider[] = [
-  { name: 'github',    label: 'GitHub',    icon: '🐙' },
-  { name: 'google',    label: 'Google',    icon: '🔵' },
-  { name: 'discord',   label: 'Discord',   icon: '💜' },
-  { name: 'microsoft', label: 'Microsoft', icon: '🟦' },
-  { name: 'apple',     label: 'Apple',     icon: '🍎' },
-]
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -114,7 +101,7 @@ export default function SettingsPage() {
           <div className={styles.loginPrompt}>
             <p>Please log in to manage your settings.</p>
             <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-              {PROVIDERS.map(({ name, label, icon }) => (
+              {PROVIDER_META.map(({ name, label, icon }) => (
                 <a
                   key={name}
                   href={authUrl(`/${name}`, window.location.href)}
@@ -156,7 +143,7 @@ export default function SettingsPage() {
             {loadingIdentities ? (
               <div className={styles.loading}>Loading…</div>
             ) : (
-              PROVIDERS.map(({ name, label, icon }) => {
+              PROVIDER_META.map(({ name, label, icon }) => {
                 const identity = identities.find((i) => i.provider === name)
                 const isConnected = connectedProviders.has(name)
                 const isLastIdentity = identities.length <= 1

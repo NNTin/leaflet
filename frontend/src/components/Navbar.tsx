@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { csrfHeaders } from '../api'
 import { authUrl } from '../urls'
 import styles from './Navbar.module.css'
+import LoginModal from './LoginModal'
 
 interface NavbarUser {
   username: string;
@@ -15,6 +17,7 @@ interface NavbarProps {
 
 export default function Navbar({ user, onLogout }: NavbarProps) {
   const navigate = useNavigate()
+  const [showLogin, setShowLogin] = useState(false)
 
   function handleLogout() {
     if (onLogout) {
@@ -27,46 +30,53 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
   }
 
   return (
-    <nav className={styles.nav}>
-      <div className={styles.inner}>
-        <Link to="/" className={styles.logo}>
-          <span className={styles.logoIcon}>🌱</span>
-          <span className={styles.logoText}>Leaflet</span>
-        </Link>
-
-        <div className={styles.links}>
-          <Link to="/developer" className={styles.link}>
-            Developer API
+    <>
+      <nav className={styles.nav}>
+        <div className={styles.inner}>
+          <Link to="/" className={styles.logo}>
+            <span className={styles.logoIcon}>🌱</span>
+            <span className={styles.logoText}>Leaflet</span>
           </Link>
 
-          {user?.role === 'admin' && (
-            <Link to="/admin" className={styles.link}>
-              Admin
+          <div className={styles.links}>
+            <Link to="/developer" className={styles.link}>
+              Developer API
             </Link>
-          )}
 
-          {user ? (
-            <div className={styles.userArea}>
-              <span className={styles.username}>
-                {user.username}
-                {user.role !== 'user' && (
-                  <span className={styles.badge}>{user.role}</span>
-                )}
-              </span>
-              <Link to="/settings" className={styles.link}>
-                Settings
+            {user?.role === 'admin' && (
+              <Link to="/admin" className={styles.link}>
+                Admin
               </Link>
-              <button onClick={handleLogout} className="btn btn-secondary btn-sm">
-                Logout
+            )}
+
+            {user ? (
+              <div className={styles.userArea}>
+                <span className={styles.username}>
+                  {user.username}
+                  {user.role !== 'user' && (
+                    <span className={styles.badge}>{user.role}</span>
+                  )}
+                </span>
+                <Link to="/settings" className={styles.link}>
+                  Settings
+                </Link>
+                <button onClick={handleLogout} className="btn btn-secondary btn-sm">
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowLogin(true)}
+                className="btn btn-primary btn-sm"
+              >
+                Login
               </button>
-            </div>
-          ) : (
-            <a href={authUrl('/github', window.location.href)} className="btn btn-primary btn-sm">
-              Login with GitHub
-            </a>
-          )}
+            )}
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+    </>
   )
 }

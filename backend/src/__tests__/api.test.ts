@@ -7,6 +7,7 @@
 import request from 'supertest';
 import crypto from 'crypto';
 import baseSpec from '../openapi';
+import { REGISTERED_PROVIDERS } from '../providers/registry';
 
 interface UrlRecord {
   id: number;
@@ -1522,6 +1523,42 @@ describe('GET /auth/me', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('Insufficient scope.');
     expect(res.body.hint).toMatch(/user:read/);
+  });
+});
+
+describe('GET /auth/providers', () => {
+  afterEach(() => {
+    // Restore REGISTERED_PROVIDERS to its original state (empty in test env).
+    REGISTERED_PROVIDERS.length = 0;
+  });
+
+  it('returns an empty array when no providers are configured', async () => {
+    const res = await request(app).get('/auth/providers');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('returns configured providers with name and label', async () => {
+    REGISTERED_PROVIDERS.push('github', 'google');
+    const res = await request(app).get('/auth/providers');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      { name: 'github', label: 'GitHub' },
+      { name: 'google', label: 'Google' },
+    ]);
+  });
+
+  it('returns only the currently registered subset', async () => {
+    REGISTERED_PROVIDERS.push('discord');
+    const res = await request(app).get('/auth/providers');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toEqual({ name: 'discord', label: 'Discord' });
+  });
+
+  it('does not require authentication', async () => {
+    const res = await request(app).get('/auth/providers');
+    expect(res.status).toBe(200);
   });
 });
 

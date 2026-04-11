@@ -278,6 +278,42 @@ const spec: OpenApiDocument = {
         }
       }
     },
+    "/auth/providers": {
+      "get": {
+        "summary": "List configured OAuth providers",
+        "description": "Returns the OAuth providers that are currently configured and available on this server. Only providers with valid credentials registered at startup are included.",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of available providers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "enum": ["github", "google", "discord", "microsoft", "apple"],
+                        "description": "Provider identifier used in OAuth URLs"
+                      },
+                      "label": {
+                        "type": "string",
+                        "description": "Human-readable provider name"
+                      }
+                    },
+                    "required": ["name", "label"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/{provider}": {
       "get": {
         "summary": "Initiate OAuth login for a provider",
