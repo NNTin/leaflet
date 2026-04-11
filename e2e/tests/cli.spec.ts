@@ -91,7 +91,8 @@ test('browser session and CLI token share the same user on the backend', async (
     body: JSON.stringify({ username: 'shared-user' }),
   });
   expect(loginRes.ok).toBe(true);
-  const { userId: browserUserId } = (await loginRes.json()) as { userId: number };
+  const loginData = (await loginRes.json()) as { userId: number; csrfToken: string };
+  const sessionCookie = loginRes.headers.get('set-cookie')!.split(';')[0];
 
   // Drive CLI PKCE flow for the same username.
   await driveCliPkceLogin(tempHome, {
@@ -113,27 +114,14 @@ test('browser session and CLI token share the same user on the backend', async (
   const shortened = JSON.parse(shortenResult.stdout);
   expect(shortened.shortCode).toBeTruthy();
 
-  // Verify the URL is owned by the correct user via the browser session.
-  const setCookieHeader = loginRes.headers.get('set-cookie')!;
-  const sessionCookie = setCookieHeader.split(';')[0];
-  const csrfToken = ((await loginRes.json().catch(() => null)) as null) ?? undefined;
-
-  // Re-login to get a fresh session (the previous res body was already read).
-  const loginRes2 = await fetch(`${BACKEND_URL}/e2e/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'shared-user' }),
-  });
-  const setCookie2 = loginRes2.headers.get('set-cookie')!;
-  const sessionCookie2 = setCookie2.split(';')[0];
-
+  // Verify the browser session sees the same user.
   const meRes = await fetch(`${BACKEND_URL}/auth/me`, {
-    headers: { Cookie: sessionCookie2 },
+    headers: { Cookie: sessionCookie },
   });
   const me = (await meRes.json()) as { id?: number; username?: string };
   expect(me.username).toBe('shared-user');
   // Both surfaces refer to the same user ID.
-  expect(me.id).toBe(browserUserId);
+  expect(me.id).toBe(loginData.userId);
 });
 
 // ---------------------------------------------------------------------------

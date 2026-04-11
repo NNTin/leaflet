@@ -4,7 +4,7 @@
  * These routes are ONLY registered when E2E_TEST_MODE=true.
  * They must never be enabled in production.
  *
- * Mounted at /auth/e2e by app.ts when E2E_TEST_MODE=true.
+ * Mounted at /e2e by app.ts when E2E_TEST_MODE=true.
  */
 
 import crypto from 'crypto';

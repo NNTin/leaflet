@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # End-to-end integration test runner for Leaflet.
 #
 # Builds the backend, CLI, and frontend, then runs the Playwright test suite
@@ -8,9 +8,9 @@
 #   npm run test:e2e          # from repository root
 #   sh e2e/run.sh             # directly
 
-set -euo pipefail
+set -eu
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "🔨 Building backend..."

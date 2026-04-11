@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as path from 'path';
 
-const E2E_DB_URL = 'postgresql://leaflet:leaflet@localhost:5432/leaflet_e2e';
+const E2E_DB_URL = process.env.E2E_DATABASE_URL ?? 'postgresql://leaflet:leaflet@localhost:5432/leaflet_e2e';
 const BACKEND_PORT = 3099;
 const FRONTEND_PORT = 5099;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;

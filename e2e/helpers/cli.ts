@@ -109,9 +109,18 @@ export async function driveCliPkceLogin(
     // to handle URL being split across multiple chunks.
     let authorizeUrlFound = false;
 
+    // Build a regex that matches the actual backend hostname from BACKEND_URL.
+    const backendHostname = new URL(BACKEND_URL).hostname;
+    const authorizeUrlPattern = new RegExp(
+      `http://${backendHostname}:\\d+/oauth/authorize\\?[^\\s]+`,
+    );
+
+    // Clear the safety timeout once the process exits cleanly.
+    let safetyTimer: ReturnType<typeof setTimeout> | undefined;
+
     proc.stderr?.on('data', async (_chunk: Buffer) => {
       if (authorizeUrlFound) return;
-      const match = stderr.match(/http:\/\/localhost:\d+\/oauth\/authorize\?[^\s]+/);
+      const match = stderr.match(authorizeUrlPattern);
       if (!match) return;
 
       authorizeUrlFound = true;
@@ -127,11 +136,12 @@ export async function driveCliPkceLogin(
 
     proc.on('error', reject);
     proc.on('close', (code) => {
+      clearTimeout(safetyTimer);
       resolve({ exitCode: code ?? 0, stdout, stderr });
     });
 
     // Safety timeout — the CLI has its own 120s timeout; we set 90s here.
-    setTimeout(() => {
+    safetyTimer = setTimeout(() => {
       if (!authorizeUrlFound) {
         proc.kill();
         reject(new Error('Timed out waiting for CLI to print the authorization URL'));
