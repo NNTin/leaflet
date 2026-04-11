@@ -300,6 +300,14 @@ app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
 app.use('/oauth', oauthRoutes);
 
+if (process.env.E2E_TEST_MODE === 'true') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const e2eRoutes = require('./routes/e2e').default as express.Router;
+  // Mount on /e2e (not /auth) to avoid the /auth rate limiter in tests.
+  app.use('/e2e', e2eRoutes);
+  console.warn('[E2E] Test-only /e2e routes are active — do not use in production.');
+}
+
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
