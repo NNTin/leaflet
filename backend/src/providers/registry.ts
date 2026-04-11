@@ -294,22 +294,22 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   {
     name: 'discord',
     register() {
-      const clientID = process.env.DISCORD_CLIENT_ID;
+      const clientId = process.env.DISCORD_CLIENT_ID;
       const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-      if (!clientID || !clientSecret) {
+      if (!clientId || !clientSecret) {
         console.warn(
           '[auth] Discord provider not configured (missing DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET).',
         );
         return;
       }
-      const callbackURL =
+      const callbackUrl =
         process.env.DISCORD_CALLBACK_URL || `${BASE_URL}/auth/discord/callback`;
       passport.use(
         new DiscordStrategy(
           {
-            clientID,
+            clientId,
             clientSecret,
-            callbackURL,
+            callbackUrl,
             scope: ['identify', 'email'],
             passReqToCallback: true,
           },
