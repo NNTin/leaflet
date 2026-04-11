@@ -24,6 +24,15 @@ interface Identity {
 
 type IdentitiesResponse = Identity[] | { identities?: Identity[] };
 
+interface LinkConflict {
+  provider: string;
+  conflictingUserId: number;
+}
+
+interface MergeInitiateResponse {
+  mergeToken: string;
+}
+
 function normalizeIdentities(data: IdentitiesResponse): Identity[] {
   if (Array.isArray(data)) {
     return data;
@@ -36,13 +45,39 @@ function normalizeIdentities(data: IdentitiesResponse): Identity[] {
   return [];
 }
 
+function readLinkConflict(): LinkConflict | null {
+  const params = new URLSearchParams(window.location.search)
+  const auth = params.get('auth')
+  const provider = params.get('provider')
+  const conflictingUserId = params.get('conflictingUserId')
+
+  if (auth !== 'link_conflict' || !provider || !conflictingUserId || !/^\d+$/.test(conflictingUserId)) {
+    return null
+  }
+
+  return {
+    provider,
+    conflictingUserId: Number(conflictingUserId),
+  }
+}
+
+function clearLinkConflictSearchParams() {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('auth')
+  url.searchParams.delete('provider')
+  url.searchParams.delete('conflictingUserId')
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [identities, setIdentities] = useState<Identity[]>([])
   const [loadingIdentities, setLoadingIdentities] = useState(false)
   const [availableProviders, setAvailableProviders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState<string | null>(null)
+  const [linkConflict, setLinkConflict] = useState<LinkConflict | null>(() => readLinkConflict())
 
   // Fetch current user.
   useEffect(() => {
@@ -65,24 +100,43 @@ export default function SettingsPage() {
   }, [user])
 
   // Fetch connected identities once user is known.
-  const fetchIdentities = useCallback(() => {
+  const fetchIdentities = useCallback(async () => {
     if (!user) return
     setLoadingIdentities(true)
-    axios
-      .get<IdentitiesResponse>(authUrl('/identities'), { withCredentials: true })
-      .then((res) => setIdentities(normalizeIdentities(res.data)))
-      .catch(() => setError('Failed to load connected accounts.'))
-      .finally(() => setLoadingIdentities(false))
+    try {
+      const res = await axios.get<IdentitiesResponse>(authUrl('/identities'), { withCredentials: true })
+      setIdentities(normalizeIdentities(res.data))
+    } catch {
+      setError('Failed to load connected accounts.')
+    } finally {
+      setLoadingIdentities(false)
+    }
   }, [user])
 
   useEffect(() => {
-    fetchIdentities()
+    void fetchIdentities()
   }, [fetchIdentities])
+
+  useEffect(() => {
+    if (!linkConflict) return
+
+    const isProviderConnected = identities.some((identity) => identity.provider === linkConflict.provider)
+    if (!isProviderConnected) return
+
+    clearLinkConflictSearchParams()
+    setLinkConflict(null)
+    setSuccess((current) => {
+      if (current) return current
+      const label = PROVIDER_META_MAP[linkConflict.provider]?.label ?? linkConflict.provider
+      return `${label} is already connected to this account.`
+    })
+  }, [identities, linkConflict])
 
   // Disconnect a provider.
   async function handleDisconnect(provider: string) {
     if (actionPending) return
     setError(null)
+    setSuccess(null)
     setActionPending(provider)
     try {
       const headers = await csrfHeaders()
@@ -90,7 +144,7 @@ export default function SettingsPage() {
         withCredentials: true,
         headers,
       })
-      fetchIdentities()
+      await fetchIdentities()
     } catch (err) {
       if (axios.isAxiosError(err)) {
         const msg = (err.response?.data as { error?: string })?.error
@@ -101,6 +155,65 @@ export default function SettingsPage() {
     } finally {
       setActionPending(null)
     }
+  }
+
+  async function handleMergeConflict() {
+    if (!linkConflict || actionPending) return
+
+    setError(null)
+    setSuccess(null)
+    setActionPending('merge')
+
+    try {
+      if (identities.some((identity) => identity.provider === linkConflict.provider)) {
+        clearLinkConflictSearchParams()
+        setLinkConflict(null)
+
+        const label = PROVIDER_META_MAP[linkConflict.provider]?.label ?? linkConflict.provider
+        setSuccess(`${label} is already connected to this account.`)
+        return
+      }
+
+      const headers = await csrfHeaders()
+      const initiateRes = await axios.post<MergeInitiateResponse>(
+        authUrl('/merge/initiate'),
+        { targetUserId: linkConflict.conflictingUserId },
+        {
+          withCredentials: true,
+          headers,
+        },
+      )
+
+      await axios.post(
+        authUrl('/merge/confirm'),
+        { mergeToken: initiateRes.data.mergeToken },
+        {
+          withCredentials: true,
+          headers,
+        },
+      )
+
+      clearLinkConflictSearchParams()
+      setLinkConflict(null)
+      await fetchIdentities()
+
+      const label = PROVIDER_META_MAP[linkConflict.provider]?.label ?? linkConflict.provider
+      setSuccess(`${label} is now connected after merging the duplicate account.`)
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const msg = (err.response?.data as { error?: string; hint?: string } | undefined)
+        setError(msg?.error ?? msg?.hint ?? 'Failed to merge the duplicate account.')
+      } else {
+        setError('Unexpected error.')
+      }
+    } finally {
+      setActionPending(null)
+    }
+  }
+
+  function dismissLinkConflict() {
+    clearLinkConflictSearchParams()
+    setLinkConflict(null)
   }
 
   // Navigate to provider connect flow.
@@ -134,6 +247,33 @@ export default function SettingsPage() {
           <h1 className={styles.heading}>Settings</h1>
           <p className={styles.subheading}>Manage your account and connected login methods.</p>
 
+          {linkConflict && (
+            <section className={styles.conflictBox}>
+              <h2 className={styles.conflictTitle}>Account merge required</h2>
+              <p className={styles.conflictText}>
+                This {PROVIDER_META_MAP[linkConflict.provider]?.label ?? linkConflict.provider} account is already connected to another Leaflet account.
+                Merge that duplicate account into your current account to keep both login methods and any saved data together.
+              </p>
+              <div className={styles.conflictActions}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleMergeConflict}
+                  disabled={actionPending !== null}
+                >
+                  {actionPending === 'merge' ? 'Merging…' : 'Merge accounts'}
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={dismissLinkConflict}
+                  disabled={actionPending !== null}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </section>
+          )}
+
+          {success && <div className={styles.success}>{success}</div>}
           {error && <div className={styles.error}>{error}</div>}
 
           <section className={styles.section}>
