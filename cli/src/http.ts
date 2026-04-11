@@ -25,6 +25,13 @@ export interface ShortenRequest {
   alias?: string;
 }
 
+export interface OAuthIdentity {
+  id: number;
+  username: string;
+  role: string;
+  scopes: string[];
+}
+
 interface RequestOptions {
   method: 'GET' | 'POST' | 'DELETE';
   url: string;
@@ -93,20 +100,66 @@ export class LeafletApiClient {
     private readonly output: Output
   ) {}
 
-  async validateToken(server: string, token: string): Promise<'admin' | 'authenticated' | 'invalid'> {
+  async getOAuthIdentity(server: string, token: string): Promise<
+    | { status: 'ok'; identity: OAuthIdentity }
+    | { status: 'invalid'; error: string }
+    | { status: 'insufficient_scope'; error: string; hint: string | null }
+  > {
     const result = await this.request({
       method: 'GET',
-      url: `${server}/admin/users`,
+      url: `${server}/auth/me`,
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
 
-    if (result.status === 200) return 'admin';
-    if (result.status === 403) return 'authenticated';
-    if (result.status === 401) return 'invalid';
+    if (result.status === 200 && typeof result.body === 'object' && result.body) {
+      const body = result.body as Record<string, unknown>;
+      if (
+        typeof body.id === 'number' &&
+        typeof body.username === 'string' &&
+        typeof body.role === 'string'
+      ) {
+        const scopes = Array.isArray(body.scopes)
+          ? body.scopes.filter((value): value is string => typeof value === 'string')
+          : [];
 
-    throw new CliError('Could not verify the token against the server.', {
+        return {
+          status: 'ok',
+          identity: {
+            id: body.id,
+            username: body.username,
+            role: body.role,
+            scopes,
+          },
+        };
+      }
+    }
+
+    if (result.status === 401) {
+      const body = typeof result.body === 'object' && result.body
+        ? result.body as Record<string, unknown>
+        : null;
+      return {
+        status: 'invalid',
+        error: typeof body?.error === 'string'
+          ? body.error
+          : 'The configured OAuth access token was rejected by the server.',
+      };
+    }
+
+    if (result.status === 403) {
+      const body = typeof result.body === 'object' && result.body
+        ? result.body as Record<string, unknown>
+        : null;
+      return {
+        status: 'insufficient_scope',
+        error: typeof body?.error === 'string' ? body.error : 'Insufficient scope.',
+        hint: typeof body?.hint === 'string' ? body.hint : null,
+      };
+    }
+
+    throw new CliError('Could not verify the OAuth access token against the server.', {
       hint: 'Retry the command or check that the Leaflet backend is running and reachable.',
       details: [`Server response: ${result.status}`],
     });
@@ -161,7 +214,7 @@ export class LeafletApiClient {
 
     if (!result.ok || !csrfToken || !cookies) {
       throw new CliError('Could not establish an anonymous session.', {
-        hint: 'Retry the command or configure an API token with `leaflet-cli auth login --token <API_TOKEN>`.',
+        hint: "Retry the command or authenticate with `leaflet-cli auth login`.",
       });
     }
 

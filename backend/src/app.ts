@@ -10,6 +10,7 @@ import swaggerUi from 'swagger-ui-express';
 import path from 'path';
 import pool from './db';
 import { User } from './models/user';
+import { lookupAccessTokenWithUser } from './oauth/tokens';
 
 import './passport';
 
@@ -74,22 +75,27 @@ const sessionOptions: SessionOptions = {
   },
 };
 
-if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const connectPgSimple = require('connect-pg-simple')(session);
-  sessionOptions.store = new connectPgSimple({
-    pool,
-    tableName: 'session',
-    createTableIfMissing: true,
-  });
-}
+export const sessionStore: session.Store = (() => {
+  if (process.env.NODE_ENV === 'production' && process.env.DATABASE_URL) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const connectPgSimple = require('connect-pg-simple')(session);
+    return new connectPgSimple({
+      pool,
+      tableName: 'session',
+      createTableIfMissing: true,
+    });
+  }
+
+  return new session.MemoryStore();
+})();
+
+sessionOptions.store = sessionStore;
 
 app.use(session(sessionOptions));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Global rate limiter applied to all routes — runs before any auth or DB lookups
-// to prevent abuse of middleware-level database queries (e.g. API key lookup).
+// Global rate limiter applied to all routes — runs before any auth or DB lookups.
 const globalRateLimiter = rateLimit({
   windowMs: GLOBAL_API_WINDOW_MS,
   max: GLOBAL_API_MAX,
@@ -100,55 +106,51 @@ const globalRateLimiter = rateLimit({
 
 app.use(globalRateLimiter);
 
-// Early middleware: resolve Bearer token before CSRF check so that
+// Early middleware: resolve OAuth Bearer tokens before CSRF check so that
 // CSRF bypass and rate limit skip use a validated user, not raw headers.
-// Checks OAuth access tokens first, then falls back to legacy API keys.
-async function earlyApiKeyMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-  req.apiKeyAuthenticated = false;
+async function earlyBearerAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   req.oauthAuthenticated = false;
+  req.oauthTokenRejected = false;
+  req.oauthClientId = undefined;
+  req.oauthScopes = undefined;
+
   if (req.isAuthenticated()) return next();
+
   const authHeader = req.headers.authorization ?? '';
   if (!authHeader.startsWith('Bearer ')) return next();
+
   const rawToken = authHeader.slice(7).trim();
-  if (!rawToken) return next();
+  if (!rawToken) {
+    req.oauthTokenRejected = true;
+    return next();
+  }
 
   try {
-    // 1. Try OAuth access token (SHA-256 hash lookup).
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const oauthResult = await pool.query(
-      `SELECT t.user_id, t.client_id, t.scopes
-       FROM oauth_access_tokens t
-       WHERE t.token_hash = $1
-         AND t.revoked_at IS NULL
-         AND t.expires_at > NOW()`,
-      [tokenHash],
-    );
-
-    if (oauthResult.rows.length > 0) {
-      const row = oauthResult.rows[0] as { user_id: number; client_id: string; scopes: string[] };
-      // Fetch the full user record so req.user is populated correctly.
-      const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [row.user_id]);
-      if (userResult.rows.length > 0) {
-        req.user = userResult.rows[0] as User;
-        req.oauthAuthenticated = true;
-        req.oauthScopes = row.scopes;
-        return next();
-      }
+    const accessToken = await lookupAccessTokenWithUser(rawToken);
+    if (!accessToken) {
+      req.oauthTokenRejected = true;
+      return next();
     }
 
-    // 2. Fall back to legacy API key.
-    const apiKeyResult = await pool.query('SELECT * FROM users WHERE api_key = $1', [rawToken]);
-    if (apiKeyResult.rows.length > 0) {
-      req.user = apiKeyResult.rows[0] as User;
-      req.apiKeyAuthenticated = true;
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [accessToken.userId]);
+    if (userResult.rows.length === 0) {
+      req.oauthTokenRejected = true;
+      return next();
     }
-  } catch {
-    // Treat as unauthenticated on any DB error.
+
+    req.user = userResult.rows[0] as User;
+    req.oauthAuthenticated = true;
+    req.oauthClientId = accessToken.clientId;
+    req.oauthScopes = accessToken.scopes;
+  } catch (err) {
+    next(err as Error);
+    return;
   }
+
   next();
 }
 
-app.use(earlyApiKeyMiddleware);
+app.use(earlyBearerAuthMiddleware);
 
 app.get('/auth/csrf-token', (req: Request, res: Response) => {
   if (!req.session.csrfToken) {
@@ -160,8 +162,8 @@ app.get('/auth/csrf-token', (req: Request, res: Response) => {
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (CSRF_SAFE_METHODS.has(req.method)) return next();
 
-  // API key and OAuth token requests are not cookie-based so CSRF does not apply.
-  if (req.apiKeyAuthenticated || req.oauthAuthenticated) return next();
+  // OAuth token requests are not cookie-based so CSRF does not apply.
+  if (req.oauthAuthenticated) return next();
 
   // OAuth machine-to-machine endpoints authenticate via client credentials.
   if (OAUTH_CSRF_EXEMPT_PATHS.has(req.path)) return next();

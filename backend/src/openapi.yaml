@@ -17,7 +17,7 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      description: OAuth 2.0 access token or legacy API key
+      description: OAuth 2.0 access token
 
   schemas:
     User:
@@ -142,26 +142,6 @@ paths:
                   csrfToken:
                     type: string
 
-  /auth/api-key:
-    get:
-      summary: Get or generate an API key for CLI/programmatic access
-      description: Returns the current user's API key. Generates one if it does not exist yet. Use as a Bearer token for CLI requests.
-      tags: [Auth]
-      security:
-        - sessionCookie: []
-      responses:
-        '200':
-          description: API key for the authenticated user
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  apiKey:
-                    type: string
-        '401':
-          description: Not authenticated
-
   /auth/github:
     get:
       summary: Initiate GitHub OAuth flow
@@ -184,6 +164,7 @@ paths:
       tags: [Auth]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       responses:
         '200':
           description: Current user or null if not authenticated
@@ -402,7 +383,8 @@ paths:
                   items:
                     type: string
                     enum: [shorten:create, shorten:create:never, shorten:create:alias,
-                           urls:read, urls:delete, user:read, admin:*]
+                           urls:read, urls:delete, users:read, users:write,
+                           user:read, oauth:apps:read, oauth:apps:write, admin:*]
                 isPublic:
                   type: boolean
       responses:

@@ -25,7 +25,6 @@ interface UserRecord {
   username: string;
   role: string;
   created_at: Date;
-  api_key: string | null;
 }
 
 interface OAuthClientRecord {
@@ -149,7 +148,7 @@ jest.mock('../db', () => {
           existing.role = existing.role === 'admin' ? 'admin' : (role === 'admin' ? 'admin' : existing.role);
           return { rows: [existing] };
         }
-        const row: UserRecord = { id: db.nextUserId++, github_id, username, role, created_at: new Date(), api_key: null };
+        const row: UserRecord = { id: db.nextUserId++, github_id, username, role, created_at: new Date() };
         db.users.push(row);
         return { rows: [row] };
       }
@@ -157,11 +156,6 @@ jest.mock('../db', () => {
       if (s.startsWith('select * from users where id')) {
         const [id] = params as [number];
         return { rows: db.users.filter(u => u.id === Number(id)) };
-      }
-
-      if (s.startsWith('select * from users where api_key')) {
-        const [apiKey] = params as [string];
-        return { rows: db.users.filter(u => u.api_key === apiKey) };
       }
 
       if (s.startsWith('select') && s.includes('from users')) {
@@ -174,13 +168,6 @@ jest.mock('../db', () => {
         if (!user) return { rows: [] };
         user.role = role;
         return { rows: [user] };
-      }
-
-      if (s.startsWith('update users set api_key')) {
-        const [apiKey, id] = params as [string, number];
-        const user = db.users.find(u => u.id === Number(id));
-        if (user) user.api_key = apiKey;
-        return { rows: [] };
       }
 
       // OAuth: oauth_clients
@@ -335,22 +322,22 @@ process.env.PUBLIC_SHORT_URL_BASE = 'https://leaflet.lair.nntin.xyz/s';
 process.env.PUBLIC_API_ORIGIN = 'https://leaflet.lair.nntin.xyz';
 process.env.DEFAULT_FRONTEND_URL = 'http://localhost:5173';
 
-import app from '../app';
+import app, { sessionStore } from '../app';
 
 function makeAdminUser(): UserRecord {
-  const user: UserRecord = { id: db.nextUserId++, github_id: 'admin-gh', username: 'adminuser', role: 'admin', created_at: new Date(), api_key: 'admin-api-key-test' };
+  const user: UserRecord = { id: db.nextUserId++, github_id: 'admin-gh', username: 'adminuser', role: 'admin', created_at: new Date() };
   db.users.push(user);
   return user;
 }
 
 function makePrivilegedUser(): UserRecord {
-  const user: UserRecord = { id: db.nextUserId++, github_id: 'priv-gh', username: 'privuser', role: 'privileged', created_at: new Date(), api_key: 'priv-api-key-test' };
+  const user: UserRecord = { id: db.nextUserId++, github_id: 'priv-gh', username: 'privuser', role: 'privileged', created_at: new Date() };
   db.users.push(user);
   return user;
 }
 
 function makeRegularUser(): UserRecord {
-  const user: UserRecord = { id: db.nextUserId++, github_id: 'user-gh', username: 'regularuser', role: 'user', created_at: new Date(), api_key: 'user-api-key-test' };
+  const user: UserRecord = { id: db.nextUserId++, github_id: 'user-gh', username: 'regularuser', role: 'user', created_at: new Date() };
   db.users.push(user);
   return user;
 }
@@ -359,11 +346,103 @@ function makeOAuthClient(overrides: Partial<OAuthClientRecord> = {}): OAuthClien
   const client: OAuthClientRecord = {
     id: nextUuid(), user_id: null, name: 'Test App', client_id: 'test-client-id',
     client_secret: null, is_public: true, redirect_uris: ['http://localhost'],
-    scopes: ['shorten:create', 'user:read'], created_at: new Date(), revoked_at: null,
+    scopes: [
+      'shorten:create',
+      'shorten:create:never',
+      'shorten:create:alias',
+      'urls:read',
+      'urls:delete',
+      'users:read',
+      'users:write',
+      'user:read',
+      'oauth:apps:read',
+      'oauth:apps:write',
+      'admin:*',
+    ],
+    created_at: new Date(),
+    revoked_at: null,
     ...overrides,
   };
   db.oauthClients.push(client);
   return client;
+}
+
+function issueAccessToken(user: UserRecord, scopes: string[], overrides: Partial<OAuthAccessTokenRecord> = {}): string {
+  const rawToken = `token-${nextUuid()}`;
+  db.oauthAccessTokens.push({
+    id: nextUuid(),
+    token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
+    client_id: 'test-client-id',
+    user_id: user.id,
+    scopes,
+    expires_at: new Date(Date.now() + 15 * 60 * 1000),
+    revoked_at: null,
+    created_at: new Date(),
+    ...overrides,
+  });
+  return rawToken;
+}
+
+type MemorySessionStore = {
+  all: (callback: (err: Error | null, sessions?: Record<string, Record<string, unknown>>) => void) => void;
+  clear: (callback: (err?: Error | null) => void) => void;
+  set: (sid: string, session: Record<string, unknown>, callback: (err?: Error | null) => void) => void;
+};
+
+async function clearTestSessions(): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    (sessionStore as unknown as MemorySessionStore).clear((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+async function createAuthenticatedSession(user: UserRecord, ip = '10.99.99.1'): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  csrfToken: string;
+}> {
+  const agent = request.agent(app);
+  const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip);
+  const csrfToken = csrfRes.body.csrfToken as string;
+
+  const sessions = await new Promise<Record<string, Record<string, unknown>>>((resolve, reject) => {
+    (sessionStore as unknown as MemorySessionStore).all((err, currentSessions) => {
+      if (err || !currentSessions) {
+        reject(err ?? new Error('No sessions found.'));
+        return;
+      }
+
+      resolve(currentSessions);
+    });
+  });
+
+  const entry = Object.entries(sessions).find(([, session]) => session.csrfToken === csrfToken);
+  if (!entry) {
+    throw new Error('Could not locate test session in store.');
+  }
+
+  const [sid, session] = entry;
+  await new Promise<void>((resolve, reject) => {
+    (sessionStore as unknown as MemorySessionStore).set(
+      sid,
+      { ...session, passport: { user: user.id } },
+      (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        resolve();
+      },
+    );
+  });
+
+  return { agent, csrfToken };
 }
 
 beforeEach(() => {
@@ -376,6 +455,10 @@ beforeEach(() => {
   db.oauthAccessTokens = [];
   db.oauthRefreshTokens = [];
   jest.clearAllMocks();
+});
+
+beforeEach(async () => {
+  await clearTestSessions();
 });
 
 describe('OpenAPI TTL enum contract', () => {
@@ -519,42 +602,77 @@ describe('POST /api/shorten - role enforcement', () => {
     expect(res.status).toBe(403);
   });
 
-  it('forbids alias for regular user via API key', async () => {
-    makeRegularUser();
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer user-api-key-test').send({ url: 'https://example.com', ttl: '24h', alias: 'my-alias' });
+  it('returns 403 when OAuth scope is missing for shorten requests', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['user:read']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h' });
     expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Insufficient scope.');
+    expect(res.body.hint).toMatch(/shorten:create/);
   });
 
-  it('allows alias for privileged user via API key', async () => {
-    makePrivilegedUser();
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer priv-api-key-test').send({ url: 'https://example.com', ttl: '24h', alias: 'priv-alias' });
+  it('forbids alias for regular user via OAuth token even when the alias scope is present', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create', 'shorten:create:alias']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h', alias: 'my-alias' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Privileged account required for custom aliases.');
+  });
+
+  it('returns 403 when alias scope is missing for OAuth token requests', async () => {
+    const user = makePrivilegedUser();
+    const token = issueAccessToken(user, ['shorten:create']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h', alias: 'priv-alias' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Insufficient scope.');
+    expect(res.body.hint).toMatch(/shorten:create:alias/);
+  });
+
+  it('allows alias for privileged user via OAuth token', async () => {
+    const user = makePrivilegedUser();
+    const token = issueAccessToken(user, ['shorten:create', 'shorten:create:alias']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h', alias: 'priv-alias' });
     expect(res.status).toBe(201);
     expect(res.body.shortCode).toBe('priv-alias');
   });
 
-  it('allows alias for admin user via API key', async () => {
-    makeAdminUser();
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer admin-api-key-test').send({ url: 'https://example.com', ttl: '24h', alias: 'admin-alias' });
+  it('allows alias for admin user via OAuth token', async () => {
+    const user = makeAdminUser();
+    const token = issueAccessToken(user, ['shorten:create', 'shorten:create:alias']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h', alias: 'admin-alias' });
     expect(res.status).toBe(201);
     expect(res.body.shortCode).toBe('admin-alias');
   });
 
   it('returns 409 for duplicate alias', async () => {
-    makePrivilegedUser();
+    const user = makePrivilegedUser();
+    const token = issueAccessToken(user, ['shorten:create', 'shorten:create:alias']);
     db.urls.push({ id: 1, short_code: 'taken', original_url: 'https://other.com', expires_at: null, is_custom: true, user_id: null, created_at: new Date() });
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer priv-api-key-test').send({ url: 'https://example.com', ttl: '24h', alias: 'taken' });
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h', alias: 'taken' });
     expect(res.status).toBe(409);
   });
 
-  it('forbids never-TTL for non-admin', async () => {
-    makeRegularUser();
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer user-api-key-test').send({ url: 'https://example.com', ttl: 'never' });
+  it('forbids never-TTL for non-admin even when the scope is present', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create', 'shorten:create:never']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: 'never' });
     expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Admin access required to create links with no expiration.');
   });
 
-  it('allows never-TTL for admin, resulting in null expiresAt', async () => {
-    makeAdminUser();
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer admin-api-key-test').send({ url: 'https://example.com', ttl: 'never' });
+  it('returns 403 when never-TTL scope is missing for admin OAuth requests', async () => {
+    const user = makeAdminUser();
+    const token = issueAccessToken(user, ['shorten:create']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: 'never' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Insufficient scope.');
+    expect(res.body.hint).toMatch(/shorten:create:never/);
+  });
+
+  it('allows never-TTL for admin with the required scope, resulting in null expiresAt', async () => {
+    const user = makeAdminUser();
+    const token = issueAccessToken(user, ['shorten:create', 'shorten:create:never']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: 'never' });
     expect(res.status).toBe(201);
     expect(res.body.expiresAt).toBeNull();
   });
@@ -578,16 +696,28 @@ describe('Admin dashboard API endpoints', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /admin/urls - rejects non-admin user with 403', async () => {
-    makeRegularUser();
-    const res = await request(app).get('/admin/urls').set('Authorization', 'Bearer user-api-key-test');
+  it('GET /admin/urls - rejects non-admin OAuth user with 403 even when the scope is present', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['urls:read']);
+    const res = await request(app).get('/admin/urls').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Admin access required.');
   });
 
-  it('GET /admin/urls - returns camelCase fields for admin', async () => {
-    makeAdminUser();
+  it('GET /admin/urls - rejects admin OAuth user without the required scope', async () => {
+    const user = makeAdminUser();
+    const token = issueAccessToken(user, ['user:read']);
+    const res = await request(app).get('/admin/urls').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Insufficient scope.');
+    expect(res.body.hint).toMatch(/urls:read/);
+  });
+
+  it('GET /admin/urls - returns camelCase fields for admin OAuth requests with the required scope', async () => {
+    const user = makeAdminUser();
+    const token = issueAccessToken(user, ['urls:read']);
     db.urls.push({ id: 1, short_code: 'abc123', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
-    const res = await request(app).get('/admin/urls').set('Authorization', 'Bearer admin-api-key-test');
+    const res = await request(app).get('/admin/urls').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     const item = res.body[0] as Record<string, unknown>;
@@ -597,10 +727,28 @@ describe('Admin dashboard API endpoints', () => {
     expect(item).not.toHaveProperty('short_code');
   });
 
+  it('GET /admin/urls - allows admin browser sessions without OAuth scopes', async () => {
+    const user = makeAdminUser();
+    const { agent } = await createAuthenticatedSession(user, '10.99.6.1');
+    db.urls.push({ id: 1, short_code: 'abc123', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
+
+    const res = await agent.get('/admin/urls').set('X-Forwarded-For', '10.99.6.1');
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /admin/urls - keeps browser sessions role-gated', async () => {
+    const user = makeRegularUser();
+    const { agent } = await createAuthenticatedSession(user, '10.99.6.2');
+    const res = await agent.get('/admin/urls').set('X-Forwarded-For', '10.99.6.2');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Admin access required.');
+  });
+
   it('GET /admin/users - returns camelCase fields for admin', async () => {
-    makeAdminUser();
+    const admin = makeAdminUser();
     makeRegularUser();
-    const res = await request(app).get('/admin/users').set('Authorization', 'Bearer admin-api-key-test');
+    const token = issueAccessToken(admin, ['users:read']);
+    const res = await request(app).get('/admin/users').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     const user = (res.body as Record<string, unknown>[]).find(u => (u as { username: string }).username === 'regularuser');
     expect(user).toHaveProperty('createdAt');
@@ -608,14 +756,16 @@ describe('Admin dashboard API endpoints', () => {
   });
 
   it('DELETE /admin/urls/:id - returns 404 for unknown id', async () => {
-    makeAdminUser();
-    const res = await request(app).delete('/admin/urls/9999').set('Authorization', 'Bearer admin-api-key-test');
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['urls:delete']);
+    const res = await request(app).delete('/admin/urls/9999').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
   it('PATCH /admin/users/:id/role - prevents admin self-demotion', async () => {
     const admin = makeAdminUser();
-    const res = await request(app).patch(`/admin/users/${admin.id}/role`).set('Authorization', 'Bearer admin-api-key-test').send({ role: 'user' });
+    const token = issueAccessToken(admin, ['users:write']);
+    const res = await request(app).patch(`/admin/users/${admin.id}/role`).set('Authorization', `Bearer ${token}`).send({ role: 'user' });
     expect(res.status).toBe(400);
   });
 });
@@ -664,9 +814,23 @@ describe('CSRF protection', () => {
     expect(res.status).toBe(403);
   });
 
-  it('bypasses CSRF for Bearer (API key) authenticated requests', async () => {
-    makeAdminUser();
-    const res = await request(app).post('/api/shorten').set('Authorization', 'Bearer admin-api-key-test').send({ url: 'https://example.com', ttl: '24h' });
+  it('requires CSRF tokens for browser-session mutations', async () => {
+    const admin = makeAdminUser();
+    db.urls.push({ id: 1, short_code: 'delete-me', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
+
+    const { agent, csrfToken } = await createAuthenticatedSession(admin, '10.99.5.4');
+
+    const missingCsrf = await agent.delete('/admin/urls/1').set('X-Forwarded-For', '10.99.5.4');
+    expect(missingCsrf.status).toBe(403);
+
+    const allowed = await agent.delete('/admin/urls/1').set('X-CSRF-Token', csrfToken).set('X-Forwarded-For', '10.99.5.4');
+    expect(allowed.status).toBe(200);
+  });
+
+  it('bypasses CSRF for OAuth Bearer authenticated requests', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create']);
+    const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h' });
     expect(res.status).toBe(201);
   });
 });
@@ -991,14 +1155,71 @@ describe('OAuth Bearer token authentication', () => {
     expect(res.status).toBe(201);
   });
 
-  it('falls back to API key auth when OAuth token lookup returns no rows', async () => {
-    makeAdminUser();
-    // admin-api-key-test is a legacy API key, not in oauth_access_tokens.
+  it('rejects unknown Bearer tokens without falling back to legacy API key auth', async () => {
     const res = await request(app)
       .post('/api/shorten')
-      .set('Authorization', 'Bearer admin-api-key-test')
-      .send({ url: 'https://example.com', ttl: 'never' });
-    expect(res.status).toBe(201);
+      .set('Authorization', 'Bearer not-a-real-oauth-token')
+      .send({ url: 'https://example.com', ttl: '24h' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid or expired bearer token.');
+  });
+
+  it('rejects expired OAuth access tokens with 401', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create'], {
+      expires_at: new Date(Date.now() - 1000),
+    });
+
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid or expired bearer token.');
+  });
+
+  it('rejects revoked OAuth access tokens with 401', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create'], {
+      revoked_at: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid or expired bearer token.');
+  });
+});
+
+describe('GET /auth/me', () => {
+  it('returns OAuth user info including granted scopes', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['user:read', 'shorten:create']);
+
+    const res = await request(app)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.username).toBe('regularuser');
+    expect(res.body.scopes).toEqual(['user:read', 'shorten:create']);
+  });
+
+  it('returns 403 with a scope hint when user:read is missing', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create']);
+
+    const res = await request(app)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Insufficient scope.');
+    expect(res.body.hint).toMatch(/user:read/);
   });
 });
 
@@ -1008,11 +1229,22 @@ describe('GET /oauth/apps', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns empty array when user has no consented apps', async () => {
-    makeAdminUser();
+  it('returns 403 when the apps read scope is missing', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['user:read']);
     const res = await request(app)
       .get('/oauth/apps')
-      .set('Authorization', 'Bearer admin-api-key-test');
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body.hint).toMatch(/oauth:apps:read/);
+  });
+
+  it('returns empty array when user has no consented apps and the scope is present', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:read']);
+    const res = await request(app)
+      .get('/oauth/apps')
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
@@ -1026,11 +1258,29 @@ describe('POST /oauth/apps', () => {
     expect(res.status).toBe(401);
   });
 
-  it('registers a new confidential client for authenticated user', async () => {
-    makeAdminUser();
+  it('returns 403 when the apps write scope is missing', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:read']);
     const res = await request(app)
       .post('/oauth/apps')
-      .set('Authorization', 'Bearer admin-api-key-test')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'My Integration',
+        redirectUris: ['https://myapp.com/callback'],
+        scopes: ['shorten:create'],
+        isPublic: false,
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.hint).toMatch(/oauth:apps:write/);
+  });
+
+  it('registers a new confidential client for an authenticated user', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:write']);
+    const res = await request(app)
+      .post('/oauth/apps')
+      .set('Authorization', `Bearer ${token}`)
       .send({
         name: 'My Integration',
         redirectUris: ['https://myapp.com/callback'],
@@ -1046,10 +1296,11 @@ describe('POST /oauth/apps', () => {
   });
 
   it('registers a new public client without a clientSecret', async () => {
-    makeAdminUser();
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:write']);
     const res = await request(app)
       .post('/oauth/apps')
-      .set('Authorization', 'Bearer admin-api-key-test')
+      .set('Authorization', `Bearer ${token}`)
       .send({
         name: 'My SPA',
         redirectUris: ['https://myapp.com/callback'],
@@ -1063,10 +1314,11 @@ describe('POST /oauth/apps', () => {
   });
 
   it('returns 400 for invalid scope', async () => {
-    makeAdminUser();
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:write']);
     const res = await request(app)
       .post('/oauth/apps')
-      .set('Authorization', 'Bearer admin-api-key-test')
+      .set('Authorization', `Bearer ${token}`)
       .send({
         name: 'Bad App',
         redirectUris: ['https://myapp.com/callback'],
@@ -1085,30 +1337,34 @@ describe('DELETE /oauth/apps/:clientId', () => {
   });
 
   it('returns 404 for unknown client', async () => {
-    makeAdminUser();
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:write']);
     const res = await request(app)
       .delete('/oauth/apps/unknown-client-xyz')
-      .set('Authorization', 'Bearer admin-api-key-test');
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 
   it('allows owner to revoke own client', async () => {
-    const user = makeAdminUser();
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['oauth:apps:write']);
     makeOAuthClient({ client_id: 'owner-client', user_id: user.id });
     const res = await request(app)
       .delete('/oauth/apps/owner-client')
-      .set('Authorization', 'Bearer admin-api-key-test');
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
   });
 
   it('prevents non-owner non-admin from revoking another users client', async () => {
     const owner = makeRegularUser();
     makeOAuthClient({ client_id: 'owned-client', user_id: owner.id });
-    const attacker: UserRecord = { id: db.nextUserId++, github_id: 'attacker-gh', username: 'attacker', role: 'user', created_at: new Date(), api_key: 'attacker-key' };
-    db.users.push(attacker);
+    const attacker = makeRegularUser();
+    attacker.github_id = 'attacker-gh';
+    attacker.username = 'attacker';
+    const token = issueAccessToken(attacker, ['oauth:apps:write']);
     const res = await request(app)
       .delete('/oauth/apps/owned-client')
-      .set('Authorization', 'Bearer attacker-key');
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
   });
 });

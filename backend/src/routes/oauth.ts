@@ -8,7 +8,7 @@ import { issueAuthorizationCode, consumeAuthorizationCode } from '../oauth/codes
 import { issueTokenPair, rotateRefreshToken, revokeAccessToken, revokeRefreshToken } from '../oauth/tokens';
 import { verifyPkce } from '../oauth/pkce';
 import { parseScopes, isValidScope, userRoleSatisfiesScope, VALID_SCOPES } from '../oauth/scopes';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireScope } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -48,7 +48,11 @@ function renderConsentPage(params: {
     'shorten:create:alias': 'Create links with custom aliases',
     'urls:read': 'List all short links (admin)',
     'urls:delete': 'Delete any short link (admin)',
+    'users:read': 'List all users (admin)',
+    'users:write': 'Change user roles (admin)',
     'user:read': 'Read your profile',
+    'oauth:apps:read': 'Read your OAuth application consents',
+    'oauth:apps:write': 'Create or revoke your OAuth applications',
     'admin:*': 'Full admin access',
   };
 
@@ -591,6 +595,7 @@ router.post(
 router.get(
   '/apps',
   requireAuth,
+  requireScope('oauth:apps:read'),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user as User;
@@ -627,6 +632,7 @@ router.get(
 router.post(
   '/apps',
   requireAuth,
+  requireScope('oauth:apps:write'),
   [
     body('name').isString().notEmpty().withMessage('name is required'),
     body('redirectUris')
@@ -695,6 +701,7 @@ router.post(
 router.delete(
   '/apps/:clientId',
   requireAuth,
+  requireScope('oauth:apps:write'),
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const user = req.user as User;

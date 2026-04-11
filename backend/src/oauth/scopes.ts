@@ -4,7 +4,11 @@ export const VALID_SCOPES = [
   'shorten:create:alias',
   'urls:read',
   'urls:delete',
+  'users:read',
+  'users:write',
   'user:read',
+  'oauth:apps:read',
+  'oauth:apps:write',
   'admin:*',
 ] as const;
 
@@ -17,7 +21,11 @@ export const SCOPE_ROLE_REQUIREMENT: Record<Scope, 'user' | 'privileged' | 'admi
   'shorten:create:alias': 'privileged',
   'urls:read': 'admin',
   'urls:delete': 'admin',
+  'users:read': 'admin',
+  'users:write': 'admin',
   'user:read': 'user',
+  'oauth:apps:read': 'user',
+  'oauth:apps:write': 'user',
   'admin:*': 'admin',
 };
 

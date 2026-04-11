@@ -4,5 +4,4 @@ export interface User {
   username: string;
   role: 'user' | 'privileged' | 'admin';
   created_at: Date;
-  api_key: string | null;
 }

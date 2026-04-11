@@ -14,9 +14,12 @@ declare global {
     interface User extends AppUser {}
 
     interface Request {
-      apiKeyAuthenticated?: boolean;
-      /** Set by earlyApiKeyMiddleware when a valid OAuth 2.0 access token is presented. */
+      /** Set by earlyBearerAuthMiddleware when a valid OAuth 2.0 access token is presented. */
       oauthAuthenticated?: boolean;
+      /** Set when a Bearer token was presented but rejected as invalid, expired, or revoked. */
+      oauthTokenRejected?: boolean;
+      /** OAuth client ID associated with the access token in use. */
+      oauthClientId?: string;
       /** Scopes granted to the OAuth access token in use. */
       oauthScopes?: string[];
     }
