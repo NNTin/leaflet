@@ -534,3 +534,24 @@ test('delete requires OAuth authentication and shows an actionable error', async
   assert.match(String(payload.error), /requires oauth authentication/i);
   assert.match(String(payload.hint), /auth login/i);
 });
+
+test('invalid TTL value produces a structured error with allowed values', async () => {
+  const homeDir = await makeTempHome();
+  const fetchStub = createFetchStub([]);
+
+  const result = await invokeCli([
+    'shorten',
+    'https://example.com',
+    '--ttl',
+    '10m',
+    '--json',
+  ], { homeDir, fetchStub });
+
+  assert.equal(result.exitCode, 1);
+  assert.equal(fetchStub.calls.length, 0);
+
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.success, false);
+  assert.match(String(payload.error), /invalid ttl/i);
+  assert.match(String(payload.hint), /shorten --help/i);
+});

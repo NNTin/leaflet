@@ -180,10 +180,10 @@ function validateRedirectUri(uri: string): string | null {
 router.get(
   '/authorize',
   [
-    qv('response_type').equals('code').withMessage('response_type must be "code"'),
-    qv('client_id').notEmpty().withMessage('client_id is required'),
-    qv('redirect_uri').notEmpty().withMessage('redirect_uri is required'),
-    qv('scope').notEmpty().withMessage('scope is required'),
+    qv('response_type').isString().equals('code').withMessage('response_type must be "code"'),
+    qv('client_id').isString().notEmpty().withMessage('client_id is required'),
+    qv('redirect_uri').isString().notEmpty().withMessage('redirect_uri is required'),
+    qv('scope').isString().notEmpty().withMessage('scope is required'),
   ],
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

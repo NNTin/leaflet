@@ -167,13 +167,41 @@ paths:
         - BearerAuth: []
       responses:
         '200':
-          description: Current user or null if not authenticated
+          description: Current user (with optional scopes for OAuth tokens) or null if not authenticated
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/User'
+                  - allOf:
+                      - $ref: '#/components/schemas/User'
+                      - type: object
+                        properties:
+                          scopes:
+                            type: array
+                            items:
+                              type: string
+                            description: Granted OAuth scopes (only present for OAuth token requests)
                   - type: 'null'
+        '401':
+          description: Bearer token is invalid or expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '403':
+          description: OAuth token lacks the required user:read scope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  hint:
+                    type: string
 
   /auth/logout:
     post:

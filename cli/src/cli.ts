@@ -2,7 +2,7 @@ import os from 'os';
 import { Command, CommanderError } from 'commander';
 import fetch from 'node-fetch';
 import { CliError } from './errors';
-import { getConfigPath, readStoredConfig, resolveConfig, writeStoredConfig, DEFAULT_SERVER, StoredConfig } from './config';
+import { getConfigPath, readStoredConfig, resolveConfig, writeStoredConfig, StoredConfig } from './config';
 import { ApiResult, FetchLike, LeafletApiClient } from './http';
 import { CommandHelp, Output } from './output';
 import {
@@ -452,6 +452,7 @@ async function maybeRefreshOAuthToken(
   homeDir: string,
   output: Output,
   oauthDeps: OAuthDeps,
+  server: string,
 ): Promise<StoredConfig> {
   if (!storedConfig.oauth) return storedConfig;
   if (!oauthDeps.isTokenExpiringSoon(storedConfig.oauth)) return storedConfig;
@@ -459,7 +460,7 @@ async function maybeRefreshOAuthToken(
   output.info('OAuth access token is expiring soon, refreshing…');
   try {
     const tokenResponse = await oauthDeps.refreshAccessToken({
-      server: DEFAULT_SERVER,
+      server,
       clientId: storedConfig.oauth.clientId,
       refreshToken: storedConfig.oauth.refreshToken,
     });
@@ -486,7 +487,8 @@ async function handleShorten(urlValue: string, options: ShortenOptions, runtime:
   const output = createOutput(options, runtime);
   const oauthDeps = resolveOAuthDeps(runtime);
   let storedConfig = await readStoredConfig(runtime.homeDir);
-  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps);
+  const server = resolveConfig({ env: runtime.env, storedConfig }).server;
+  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps, server);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
@@ -681,7 +683,8 @@ async function handleAuthStatus(options: SharedOptions, runtime: CliRuntime): Pr
   const output = createOutput(options, runtime);
   const oauthDeps = resolveOAuthDeps(runtime);
   let storedConfig = await readStoredConfig(runtime.homeDir);
-  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps);
+  const server = resolveConfig({ env: runtime.env, storedConfig }).server;
+  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps, server);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
@@ -745,7 +748,8 @@ async function handleDelete(idValue: string, options: DeleteOptions, runtime: Cl
   const output = createOutput(options, runtime);
   const oauthDeps = resolveOAuthDeps(runtime);
   let storedConfig = await readStoredConfig(runtime.homeDir);
-  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps);
+  const server = resolveConfig({ env: runtime.env, storedConfig }).server;
+  storedConfig = await maybeRefreshOAuthToken(storedConfig, runtime.homeDir, output, oauthDeps, server);
   const resolvedConfig = resolveConfig({
     env: runtime.env,
     storedConfig,
