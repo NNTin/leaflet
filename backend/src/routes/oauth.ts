@@ -134,6 +134,41 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Validates a redirect URI for client registration.
+ * Rules (per RFC 6749 §3.1.2 and RFC 8252 §7.3):
+ *  - Must be a well-formed absolute URL (no fragment)
+ *  - http scheme is only allowed for loopback addresses
+ *  - https is required for all non-loopback redirect URIs
+ */
+function validateRedirectUri(uri: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return `"${uri}" is not a valid URL`;
+  }
+
+  if (parsed.hash) {
+    return `Redirect URI must not contain a fragment: ${uri}`;
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return `Redirect URI must use http or https scheme: ${uri}`;
+  }
+
+  const isLoopback =
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '[::1]';
+
+  if (parsed.protocol === 'http:' && !isLoopback) {
+    return `Non-loopback redirect URIs must use https: ${uri}`;
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // GET /oauth/authorize
 // ---------------------------------------------------------------------------
@@ -195,8 +230,14 @@ router.get(
         return;
       }
 
-      // Parse and validate scopes.
-      const requestedScopes = parseScopes(scope ?? '');
+      // Parse and validate scopes; any unrecognised scope is rejected.
+      let requestedScopes: ReturnType<typeof parseScopes>;
+      try {
+        requestedScopes = parseScopes(scope ?? '');
+      } catch {
+        res.redirect(buildRedirectWithError(redirectUri, 'invalid_scope', state));
+        return;
+      }
       if (requestedScopes.length === 0) {
         res.redirect(buildRedirectWithError(redirectUri, 'invalid_scope', state));
         return;
@@ -408,6 +449,13 @@ router.post(
           return;
         }
 
+        // Defense-in-depth: public clients must always provide PKCE, regardless
+        // of whether the DB row has a code_challenge (guards against forged entries).
+        if (client.is_public && (!authCode.code_challenge || !codeVerifier)) {
+          oauthError(res, 400, 'invalid_grant', 'Public clients must use PKCE (code_verifier is required).');
+          return;
+        }
+
         // Verify PKCE for public clients (required) and confidential clients (if they used it).
         if (authCode.code_challenge) {
           if (!codeVerifier) {
@@ -587,7 +635,12 @@ router.post(
     body('redirectUris.*')
       .isString()
       .notEmpty()
-      .withMessage('Each redirectUri must be a non-empty string'),
+      .withMessage('Each redirectUri must be a non-empty string')
+      .custom((uri: string) => {
+        const error = validateRedirectUri(uri);
+        if (error) throw new Error(error);
+        return true;
+      }),
     body('scopes')
       .isArray({ min: 1 })
       .withMessage('scopes must be a non-empty array'),

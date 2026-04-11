@@ -26,10 +26,17 @@ export function isValidScope(s: string): s is Scope {
 }
 
 export function parseScopes(scopeStr: string): Scope[] {
-  return scopeStr
+  const requestedScopes = scopeStr
     .split(' ')
     .map((s) => s.trim())
-    .filter((s): s is Scope => isValidScope(s));
+    .filter((s) => s.length > 0);
+
+  const invalidScope = requestedScopes.find((s) => !isValidScope(s));
+  if (invalidScope !== undefined) {
+    throw new Error(`Invalid scope: ${invalidScope}`);
+  }
+
+  return requestedScopes as Scope[];
 }
 
 export function userRoleSatisfiesScope(

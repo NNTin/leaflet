@@ -382,6 +382,7 @@ paths:
       tags: [OAuth]
       security:
         - sessionCookie: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:

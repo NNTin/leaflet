@@ -70,14 +70,14 @@ CREATE INDEX IF NOT EXISTS idx_consents_user_id ON oauth_consents(user_id);
 
 -- Seed the first-party Leaflet CLI public client.
 -- client_id: leaflet-cli  (no secret; PKCE-only public client)
--- Allows any localhost redirect URI (port-independent, per RFC 8252).
+-- Supports localhost redirect URIs for loopback-based native app flows (RFC 8252).
 INSERT INTO oauth_clients (name, client_id, client_secret, is_public, redirect_uris, scopes)
 VALUES (
   'Leaflet CLI',
   'leaflet-cli',
   NULL,
   TRUE,
-  ARRAY['http://localhost', 'urn:ietf:wg:oauth:2.0:oob'],
+  ARRAY['http://localhost'],
   ARRAY['shorten:create', 'shorten:create:never', 'shorten:create:alias',
         'urls:read', 'urls:delete', 'user:read', 'admin:*']
 )

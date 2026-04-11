@@ -154,8 +154,10 @@ export async function revokeRefreshToken(
 }
 
 /**
- * Looks up an access token by its hash and returns the full user row joined in.
- * Used in earlyApiKeyMiddleware to authenticate OAuth tokens.
+ * Looks up an active (non-expired, non-revoked) access token by its raw value
+ * and returns its associated user ID, client ID, and granted scopes.
+ * Returns null if the token is unknown, expired, or revoked.
+ * Used by earlyApiKeyMiddleware to authenticate OAuth Bearer tokens.
  */
 export async function lookupAccessTokenWithUser(rawToken: string): Promise<{
   userId: number;

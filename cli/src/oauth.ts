@@ -42,6 +42,16 @@ export function generateState(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 
+/** Escapes special HTML characters to prevent XSS in inline content. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Renders a minimal HTML page for the OAuth callback browser tab. */
 function callbackHtml(title: string, body: string): string {
   return `<!DOCTYPE html>
@@ -98,7 +108,7 @@ export function startCallbackServer(
 
     if (error) {
       res.writeHead(400, { 'Content-Type': 'text/html' });
-      res.end(callbackHtml('Authorization denied', `The authorization request was denied: <code>${error}</code>. You can close this tab.`));
+      res.end(callbackHtml('Authorization denied', `The authorization request was denied: <code>${escapeHtml(error)}</code>. You can close this tab.`));
       server.close();
       reject(new Error(`Authorization denied: ${error}`));
       return;
@@ -140,17 +150,19 @@ export async function openBrowser(url: string): Promise<void> {
 
   // Pass the URL as a separate argument (not via shell interpolation) to
   // avoid command injection if the URL contains shell metacharacters.
+  // On Windows use explorer.exe directly instead of cmd /c start to avoid
+  // cmd.exe argument parsing rules (& and other metacharacters in URLs).
   const platform = process.platform;
   let cmd: string;
   if (platform === 'darwin') {
     cmd = 'open';
   } else if (platform === 'win32') {
-    cmd = 'cmd';
+    cmd = 'explorer.exe';
   } else {
     cmd = 'xdg-open';
   }
 
-  const args = platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const args = [url];
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'ignore', detached: true });

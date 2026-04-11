@@ -77,8 +77,10 @@ export function requireScope(scope: string) {
     }
 
     // OAuth token: must include the required scope.
+    // A token carrying `admin:*` is treated as satisfying every scope.
     if (req.oauthAuthenticated) {
-      if ((req.oauthScopes ?? []).includes(scope)) return next();
+      const scopes = req.oauthScopes ?? [];
+      if (scopes.includes('admin:*') || scopes.includes(scope)) return next();
       res.status(403).json({
         error: 'Insufficient scope.',
         hint: `Re-authenticate requesting the '${scope}' scope.`,

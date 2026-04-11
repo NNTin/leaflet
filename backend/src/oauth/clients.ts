@@ -68,9 +68,6 @@ export function isValidRedirectUri(client: OAuthClient, redirectUri: string): bo
         return false;
       }
     }
-    if (stored === 'urn:ietf:wg:oauth:2.0:oob') {
-      return redirectUri === 'urn:ietf:wg:oauth:2.0:oob';
-    }
     return stored === redirectUri;
   });
 }

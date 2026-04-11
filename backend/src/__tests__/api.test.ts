@@ -66,6 +66,19 @@ interface OAuthAccessTokenRecord {
   created_at: Date;
 }
 
+interface OAuthRefreshTokenRecord {
+  id: string;
+  token_hash: string;
+  access_token_id: string | null;
+  client_id: string;
+  user_id: number;
+  scopes: string[];
+  expires_at: Date;
+  rotated_at: Date | null;
+  revoked_at: Date | null;
+  created_at: Date;
+}
+
 const db = {
   urls: [] as UrlRecord[],
   users: [] as UserRecord[],
@@ -74,6 +87,7 @@ const db = {
   oauthClients: [] as OAuthClientRecord[],
   oauthCodes: [] as OAuthCodeRecord[],
   oauthAccessTokens: [] as OAuthAccessTokenRecord[],
+  oauthRefreshTokens: [] as OAuthRefreshTokenRecord[],
 };
 
 function nextUuid(): string {
@@ -248,8 +262,48 @@ jest.mock('../db', () => {
         return { rows: [] };
       }
 
-      // OAuth: oauth_refresh_tokens (just no-op inserts/updates for basic test coverage)
-      if (s.startsWith('insert into oauth_refresh_tokens') || s.startsWith('update oauth_refresh_tokens') || s.startsWith('select user_id, scopes from oauth_refresh_tokens')) {
+      // OAuth: oauth_refresh_tokens
+      if (s.startsWith('insert into oauth_refresh_tokens')) {
+        const [tokenHash, accessTokenId, clientId, userId, scopes, expiresAt] =
+          params as [string, string | null, string, number, string[], Date];
+        db.oauthRefreshTokens.push({
+          id: nextUuid(), token_hash: tokenHash, access_token_id: accessTokenId,
+          client_id: clientId, user_id: userId, scopes,
+          expires_at: expiresAt, rotated_at: null, revoked_at: null, created_at: new Date(),
+        });
+        return { rows: [] };
+      }
+
+      // SELECT used in refresh_token grant (routes/oauth.ts)
+      if (s.startsWith('select user_id, scopes from oauth_refresh_tokens')) {
+        const [tokenHash, clientId] = params as [string, string];
+        const now = new Date();
+        const token = db.oauthRefreshTokens.find(
+          (t) => t.token_hash === tokenHash && t.rotated_at === null &&
+                 t.revoked_at === null && t.expires_at > now && t.client_id === clientId,
+        );
+        if (!token) return { rows: [] };
+        return { rows: [{ user_id: token.user_id, scopes: token.scopes }] };
+      }
+
+      // UPDATE used in rotateRefreshToken (tokens.ts)
+      if (s.startsWith('update oauth_refresh_tokens set rotated_at')) {
+        const [tokenHash, clientId, userId] = params as [string, string, number];
+        const now = new Date();
+        const token = db.oauthRefreshTokens.find(
+          (t) => t.token_hash === tokenHash && t.rotated_at === null &&
+                 t.revoked_at === null && t.expires_at > now &&
+                 t.client_id === clientId && t.user_id === userId,
+        );
+        if (!token) return { rows: [] };
+        token.rotated_at = now;
+        return { rows: [{ id: token.id }] };
+      }
+
+      if (s.startsWith('update oauth_refresh_tokens set revoked_at')) {
+        const [tokenHash, clientId] = params as [string, string];
+        const t = db.oauthRefreshTokens.find(t => t.token_hash === tokenHash && t.client_id === clientId);
+        if (t) t.revoked_at = new Date();
         return { rows: [] };
       }
 
@@ -320,6 +374,7 @@ beforeEach(() => {
   db.oauthClients = [];
   db.oauthCodes = [];
   db.oauthAccessTokens = [];
+  db.oauthRefreshTokens = [];
   jest.clearAllMocks();
 });
 
@@ -808,6 +863,79 @@ describe('POST /oauth/token', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_grant');
+  });
+
+  it('successfully refreshes an access token and rotates the refresh token', async () => {
+    const user = makeRegularUser();
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+
+    const rawRefreshToken = 'raw-refresh-token-for-rotation-test';
+    const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+
+    db.oauthRefreshTokens.push({
+      id: nextUuid(),
+      token_hash: tokenHash,
+      access_token_id: null,
+      client_id: 'pub-client',
+      user_id: user.id,
+      scopes: ['shorten:create'],
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      rotated_at: null,
+      revoked_at: null,
+      created_at: new Date(),
+    });
+
+    const res = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ grant_type: 'refresh_token', client_id: 'pub-client', refresh_token: rawRefreshToken });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('access_token');
+    expect(res.body).toHaveProperty('refresh_token');
+    expect(res.body.token_type).toBe('Bearer');
+    expect(res.body.expires_in).toBe(900);
+    expect(res.body.scope).toBe('shorten:create');
+
+    // The old refresh token should be marked as rotated (single-use).
+    const oldToken = db.oauthRefreshTokens.find((t) => t.token_hash === tokenHash);
+    expect(oldToken?.rotated_at).not.toBeNull();
+  });
+
+  it('rejects replay of an already-rotated refresh token', async () => {
+    const user = makeRegularUser();
+    makeOAuthClient({ client_id: 'pub-client', is_public: true });
+
+    const rawRefreshToken = 'raw-refresh-token-for-replay-test';
+    const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+
+    db.oauthRefreshTokens.push({
+      id: nextUuid(),
+      token_hash: tokenHash,
+      access_token_id: null,
+      client_id: 'pub-client',
+      user_id: user.id,
+      scopes: ['shorten:create'],
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      rotated_at: null,
+      revoked_at: null,
+      created_at: new Date(),
+    });
+
+    // First use — should succeed and rotate.
+    await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ grant_type: 'refresh_token', client_id: 'pub-client', refresh_token: rawRefreshToken });
+
+    // Replay of same refresh token — must be rejected.
+    const replay = await request(app)
+      .post('/oauth/token')
+      .type('form')
+      .send({ grant_type: 'refresh_token', client_id: 'pub-client', refresh_token: rawRefreshToken });
+
+    expect(replay.status).toBe(400);
+    expect(replay.body.error).toBe('invalid_grant');
   });
 });
 
