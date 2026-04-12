@@ -15,22 +15,26 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 export default function App() {
   return (
-    <SessionProvider>
-      <Suspense fallback={<LoadingSpinner fullPage />}>
-        <Routes>
-          <Route path="/s/:code" element={<RedirectPage />} />
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/result" element={<ResultPage />} />
-            <Route path="/expired" element={<ExpiredPage />} />
-            <Route path="/error" element={<ErrorPage />} />
-            <Route path="/developer" element={<DeveloperPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<ErrorPage statusCode={404} message="Page not found" />} />
-          </Route>
-        </Routes>
-      </Suspense>
-    </SessionProvider>
+    <Suspense fallback={<LoadingSpinner fullPage />}>
+      <Routes>
+        <Route path="/s/:code" element={<RedirectPage />} />
+        <Route
+          element={
+            <SessionProvider>
+              <AppLayout />
+            </SessionProvider>
+          }
+        >
+          <Route path="/" element={<HomePage />} />
+          <Route path="/result" element={<ResultPage />} />
+          <Route path="/expired" element={<ExpiredPage />} />
+          <Route path="/error" element={<ErrorPage />} />
+          <Route path="/developer" element={<DeveloperPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<ErrorPage statusCode={404} message="Page not found" />} />
+        </Route>
+      </Routes>
+    </Suspense>
   )
 }
