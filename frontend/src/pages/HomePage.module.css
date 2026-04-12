@@ -201,6 +201,15 @@
   color: var(--muted);
 }
 
+.featureLink {
+  text-decoration: none;
+}
+
+.featureLink:hover {
+  color: var(--green-primary);
+  text-decoration: none;
+}
+
 .featureIcon {
   font-size: 1.1rem;
 }
@@ -213,4 +222,12 @@
   .features {
     gap: 1rem;
   }
+}
+
+.rateLimitMsg {
+  font-size: 0.9rem;
+  color: #e53e3e;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  font-variant-numeric: tabular-nums;
 }

@@ -92,6 +92,52 @@
   letter-spacing: 0.03em;
 }
 
+.authArea {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Rate-limit red dot indicator */
+.rateLimitWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+  outline: none;
+}
+
+.rateLimitWrapper:focus-visible {
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--green-primary);
+}
+
+.rateLimitDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e53e3e;
+  flex-shrink: 0;
+}
+
+.rateLimitTooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--text);
+  color: var(--surface);
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  z-index: 300;
+  pointer-events: none;
+}
+
 @media (max-width: 600px) {
   .inner {
     padding: 0 0.75rem;

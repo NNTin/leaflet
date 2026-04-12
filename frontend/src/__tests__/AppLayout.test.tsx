@@ -89,6 +89,10 @@ describe('App layout auth state', () => {
         })
       }
 
+      if (url.includes('/api/openapi.json')) {
+        return Promise.resolve({ data: { openapi: '3.0.0', info: { title: 'Leaflet', version: '1.0.0' }, paths: {} } })
+      }
+
       throw new Error(`Unexpected axios.get call for ${url}`)
     })
 

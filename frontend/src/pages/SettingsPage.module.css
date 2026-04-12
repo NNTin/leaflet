@@ -260,3 +260,11 @@
 .section > :global(.btn) {
   margin: 0.9rem 1.4rem 1.2rem;
 }
+
+.rateLimitMsg {
+  font-size: 0.9rem;
+  color: #e53e3e;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}

@@ -4,7 +4,7 @@ import pool from '../db';
 import { generateShortCode } from '../shortcode';
 import { ensureScopeForOAuthRequest, optionalBearerAuth, requireAdmin, requireAuth, requireScope } from '../middleware/auth';
 import { User } from '../models/user';
-import { publicShortUrlBase } from '../config';
+import { publicShortUrlBase, defaultFrontendUrl } from '../config';
 
 const router = express.Router();
 
@@ -52,6 +52,40 @@ export async function redirectShortCode(req: Request, res: Response, next: NextF
     );
 
     if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Short URL not found or has expired.' });
+      return;
+    }
+
+    res.redirect(302, result.rows[0].original_url as string);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Handler for canonical human-facing short links (GET /s/:code).
+ *
+ * Active links: 302 redirect to the original URL (same as the API handler).
+ * Missing/expired links: browser requests (Accept: text/html) are redirected
+ *   to the frontend expired page so users see the branded experience.
+ *   Machine callers (API/JSON) receive a 404 JSON response.
+ */
+export async function humanRedirectShortCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { code } = req.params;
+    const result = await pool.query(
+      `SELECT original_url FROM urls
+       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      const acceptHeader = req.headers['accept'] ?? '';
+      if (acceptHeader.includes('text/html')) {
+        const expiredUrl = `${defaultFrontendUrl.replace(/\/+$/, '')}/expired`;
+        res.redirect(302, expiredUrl);
+        return;
+      }
       res.status(404).json({ error: 'Short URL not found or has expired.' });
       return;
     }

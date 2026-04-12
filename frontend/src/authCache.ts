@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { authUrl } from './urls'
+import { RateLimitError } from './rateLimit'
 
 export interface AuthUser {
   id: number;
@@ -41,7 +42,15 @@ export const providersCache = makeCache<string[]>()
 export async function fetchMe(): Promise<AuthUser | null> {
   const cached = meCache.get()
   if (cached !== MISS) return cached
-  const res = await axios.get<AuthUser | null>(authUrl('/me'), { withCredentials: true })
-  meCache.set(res.data)
-  return res.data
+  try {
+    const res = await axios.get<AuthUser | null>(authUrl('/me'), { withCredentials: true })
+    meCache.set(res.data)
+    return res.data
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 429) {
+      const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+      throw new RateLimitError(retryAfter)
+    }
+    throw err
+  }
 }

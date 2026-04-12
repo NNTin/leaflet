@@ -25,7 +25,7 @@ import {
 import './passport';
 
 import authRoutes from './routes/auth';
-import urlRoutes, { redirectShortCode } from './routes/urls';
+import urlRoutes, { redirectShortCode, humanRedirectShortCode } from './routes/urls';
 import adminRoutes from './routes/admin';
 import oauthRoutes from './routes/oauth';
 import mergeRoutes from './routes/merge';
@@ -281,7 +281,7 @@ app.delete('/oauth/apps/:clientId', oauthAppsLimiter);
 // Route handlers
 app.use('/auth', authRoutes);
 app.use('/auth/merge', mergeRoutes);
-app.get('/s/:code', redirectShortCode);
+app.get('/s/:code', humanRedirectShortCode);
 app.use('/api', urlRoutes);
 app.use('/admin', adminRoutes);
 app.use('/oauth', oauthRoutes);
