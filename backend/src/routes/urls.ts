@@ -5,20 +5,16 @@ import { generateShortCode } from '../shortcode';
 import { ensureScopeForOAuthRequest, optionalBearerAuth, requireAdmin, requireAuth, requireScope } from '../middleware/auth';
 import { User } from '../models/user';
 import { publicShortUrlBase, defaultFrontendUrl } from '../config';
+import {
+  getShortenCapabilities,
+  SHORTEN_TTL_MAP,
+  SHORTEN_TTL_VALUES,
+  type ShortenTtl,
+  canRoleUseCustomAlias,
+  canRoleUseNeverTtl,
+} from '../shorten-policy';
 
 const router = express.Router();
-
-const MS_PER_SECOND = 1000;
-const SECONDS_PER_MINUTE = 60;
-const MINUTES_PER_HOUR = 60;
-const HOURS_PER_DAY = 24;
-
-const TTL_MAP: Record<string, number | null> = {
-  '5m': 5 * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  '1h': MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  '24h': HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  'never': null,
-};
 
 interface UrlRow {
   id: number;
@@ -96,12 +92,22 @@ export async function humanRedirectShortCode(req: Request, res: Response, next: 
   }
 }
 
+router.get('/shorten/capabilities', optionalBearerAuth, (req: Request, res: Response) => {
+  const user = (req.user as User) ?? null;
+
+  res.json(getShortenCapabilities({
+    user,
+    oauthAuthenticated: req.oauthAuthenticated === true,
+    oauthScopes: req.oauthScopes,
+  }));
+});
+
 router.post(
   '/shorten',
   optionalBearerAuth,
   [
     body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
-    body('ttl').isIn(['5m', '1h', '24h', 'never']).withMessage('TTL must be one of: 5m, 1h, 24h, never'),
+    body('ttl').isIn(SHORTEN_TTL_VALUES).withMessage(`TTL must be one of: ${SHORTEN_TTL_VALUES.join(', ')}`),
     body('alias')
       .optional()
       .matches(/^[a-zA-Z0-9-_]+$/)
@@ -127,7 +133,7 @@ router.post(
           return;
         }
 
-        if (!user || user.role !== 'admin') {
+        if (!canRoleUseNeverTtl(user?.role ?? null)) {
           return res.status(403).json({ error: 'Admin access required to create links with no expiration.' });
         }
       }
@@ -137,7 +143,7 @@ router.post(
           return;
         }
 
-        if (!user || (user.role !== 'privileged' && user.role !== 'admin')) {
+        if (!canRoleUseCustomAlias(user?.role ?? null)) {
           return res.status(403).json({ error: 'Privileged account required for custom aliases.' });
         }
       }
@@ -160,7 +166,7 @@ router.post(
         shortCode = generated;
       }
 
-      const ttlMs = TTL_MAP[ttl];
+      const ttlMs = SHORTEN_TTL_MAP[ttl as ShortenTtl];
       const expiresAt = ttlMs !== null && ttlMs !== undefined ? new Date(Date.now() + ttlMs) : null;
 
       const result = await pool.query(

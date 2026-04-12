@@ -60,6 +60,7 @@ The columns below describe the effective bucket for each caller type.
 | `GET /auth/csrf-token` | none | `csrf-bootstrap-anonymous` | `csrf-bootstrap-user` | `csrf-bootstrap-privileged` | none |
 | `GET /auth/me` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
 | `GET /auth/providers` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
+| `GET /api/shorten/capabilities` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
 | `GET /auth/:provider`, `GET /auth/:provider/callback`, `POST /auth/apple/callback` | none | `auth-flow` | `auth-flow` | `auth-flow` | none |
 | `GET /auth/:provider/link` | none | none | `account-user` | `account-privileged` | none |
 | `GET /auth/identities`, `DELETE /auth/identities/:provider`, `POST /auth/logout`, `DELETE /auth/me`, `POST /auth/merge/initiate`, `POST /auth/merge/confirm` | none | none | `account-user` | `account-privileged` | none |
@@ -90,4 +91,3 @@ The columns below describe the effective bucket for each caller type.
 - Every documented `429` response documents `Retry-After`.
 - Unlimited operations do not document rate-limit headers.
 - `GET /api/openapi.json` is rate-limited and must document those headers.
-

@@ -233,9 +233,10 @@ const swaggerDocument = {
 
 // Per-route rate limiters (applied before routers, method-specific where needed).
 
-// GET /auth/me, GET /auth/providers
+// GET /auth/me, GET /auth/providers, GET /api/shorten/capabilities
 app.get('/auth/me', authReadLimiter);
 app.get('/auth/providers', authReadLimiter);
+app.get('/api/shorten/capabilities', authReadLimiter);
 
 // GET /auth/:provider, GET /auth/:provider/callback, POST /auth/apple/callback
 // authFlowLimiter's skip function handles the exclusion of fixed paths (me, providers,

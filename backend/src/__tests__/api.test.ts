@@ -729,6 +729,18 @@ describe('OpenAPI TTL enum contract', () => {
     expect(callbackResponses).toHaveProperty('503');
     expect(appleCallbackResponses).toHaveProperty('503');
   });
+
+  it('documents the shorten capabilities endpoint', () => {
+    const capabilities = (
+      baseSpec.paths['/api/shorten/capabilities'].get as { responses: Record<string, unknown> }
+    );
+
+    expect(capabilities).toBeDefined();
+    expect(capabilities.responses).toHaveProperty('200');
+    expect(capabilities.responses).toHaveProperty('401');
+    expect(capabilities.responses).toHaveProperty('429');
+    expect((capabilities.responses['429'] as Record<string, unknown>)['$ref']).toBe('#/components/responses/TooManyRequests');
+  });
 });
 
 describe('POST /api/shorten - anonymous rate limiting', () => {
@@ -1225,6 +1237,87 @@ describe('OAuth returnTo validation', () => {
   it('normalizes relative returnTo paths to the backend origin', () => {
     const resolved = validateOAuthReturnTo('/oauth/authorize?response_type=code');
     expect(resolved).toBe('https://leaflet.lair.nntin.xyz/oauth/authorize?response_type=code');
+  });
+
+  it('allows Pages returnTo URLs under /leafspots', () => {
+    const resolved = validateOAuthReturnTo('https://nntin.xyz/leafspots/');
+    expect(resolved).toBe('https://nntin.xyz/leafspots/');
+  });
+
+  it('rejects unrelated Pages returnTo paths', () => {
+    expect(validateOAuthReturnTo('https://nntin.xyz/not-leafspots/')).toBeNull();
+  });
+});
+
+describe('GET /api/shorten/capabilities', () => {
+  it('returns anonymous shorten options and auth-read rate-limit headers', async () => {
+    const res = await request(app).get('/api/shorten/capabilities').set('X-Forwarded-For', '10.99.1.40');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      authenticated: false,
+      anonymous: true,
+      role: null,
+      shortenAllowed: true,
+      aliasingAllowed: false,
+      neverAllowed: false,
+      ttlOptions: [
+        { value: '5m', label: '5 minutes' },
+        { value: '1h', label: '1 hour' },
+        { value: '24h', label: '24 hours' },
+      ],
+    });
+
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toContain('auth-read-anonymous');
+    expect(res.headers['ratelimit-policy']).not.toContain('shorten-anonymous');
+  });
+
+  it('returns role-based options for an authenticated browser session', async () => {
+    const user = makePrivilegedUser();
+    const { agent } = await createAuthenticatedSession(user, '10.99.1.41');
+
+    const res = await agent.get('/api/shorten/capabilities').set('X-Forwarded-For', '10.99.1.41');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      authenticated: true,
+      anonymous: false,
+      role: 'privileged',
+      shortenAllowed: true,
+      aliasingAllowed: true,
+      neverAllowed: false,
+      ttlOptions: [
+        { value: '5m', label: '5 minutes' },
+        { value: '1h', label: '1 hour' },
+        { value: '24h', label: '24 hours' },
+      ],
+    });
+  });
+
+  it('returns scope-aware options for OAuth callers', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['shorten:create']);
+
+    const res = await request(app)
+      .get('/api/shorten/capabilities')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.99.1.42');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      authenticated: true,
+      anonymous: false,
+      role: 'admin',
+      shortenAllowed: true,
+      aliasingAllowed: false,
+      neverAllowed: false,
+      ttlOptions: [
+        { value: '5m', label: '5 minutes' },
+        { value: '1h', label: '1 hour' },
+        { value: '24h', label: '24 hours' },
+      ],
+    });
   });
 });
 

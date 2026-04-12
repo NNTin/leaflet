@@ -12,6 +12,7 @@ const RedirectPage = lazy(() => import('./pages/RedirectPage'))
 const DeveloperPage = lazy(() => import('./pages/DeveloperPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/result" element={<ResultPage />} />
           <Route path="/expired" element={<ExpiredPage />} />
           <Route path="/error" element={<ErrorPage />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/developer" element={<DeveloperPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/settings" element={<SettingsPage />} />

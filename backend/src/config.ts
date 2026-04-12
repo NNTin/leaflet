@@ -2,6 +2,7 @@ const LOCAL_FRONTEND_URL = 'http://localhost:5173';
 const LOCAL_API_ORIGIN = 'http://localhost:3001';
 const PAGES_ORIGIN = 'https://nntin.xyz';
 const SUBDOMAIN_ORIGIN = 'https://leaflet.lair.nntin.xyz';
+const PAGES_ALLOWED_RETURN_PATHS = ['/leaflet', '/leafspots'] as const;
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -21,6 +22,10 @@ function normalizeUrl(value: string, fallback: string): string {
   } catch {
     return fallback;
   }
+}
+
+function matchesAllowedPathPrefix(pathname: string, allowedPrefixes: readonly string[]): boolean {
+  return allowedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 function parseOriginList(value: string | undefined): string[] {
@@ -57,7 +62,7 @@ export function isAllowedFrontendOrigin(origin: string): boolean {
 
 function allowsReturnPath(url: URL): boolean {
   if (url.origin === PAGES_ORIGIN) {
-    return url.pathname === '/leaflet' || url.pathname.startsWith('/leaflet/');
+    return matchesAllowedPathPrefix(url.pathname, PAGES_ALLOWED_RETURN_PATHS);
   }
 
   if (url.origin === SUBDOMAIN_ORIGIN) {
