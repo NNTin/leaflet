@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { meCache, providersCache } from '../authCache'
 import HomePage from '../pages/HomePage'
 import { SessionProvider } from '../session'
@@ -38,9 +38,9 @@ vi.mock('axios', () => {
 vi.mock('../api', () => {
   return {
     default: {
-      post: (...args: unknown[]) => mocks.apiPost(...args),
+      post: mocks.apiPost,
     },
-    csrfHeaders: (...args: unknown[]) => mocks.csrfHeaders(...args),
+    csrfHeaders: mocks.csrfHeaders,
   }
 })
 

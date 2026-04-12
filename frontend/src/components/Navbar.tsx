@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useSession } from '../session'
 import { useCountdown, formatMMSS } from '../rateLimit'
 import styles from './Navbar.module.css'
@@ -56,7 +56,6 @@ function LogoutButton({ onLogout }: { onLogout: () => void }) {
 }
 
 export default function Navbar() {
-  const navigate = useNavigate()
   const [showLogin, setShowLogin] = useState(false)
   // Fix 3: do not show placeholder while loading if meRateLimited is set –
   // the last-known state is being preserved and must remain visible.

@@ -57,13 +57,6 @@ vi.mock('../api', () => ({
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-function makeAxiosError(status: number, headers: Record<string, string> = {}) {
-  return Object.assign(new Error('Request failed'), {
-    isAxiosError: true,
-    response: { status, data: { error: 'Rate limited.' }, headers },
-  })
-}
-
 function renderNavbar() {
   return render(
     <MemoryRouter>
