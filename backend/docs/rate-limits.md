@@ -1,67 +1,93 @@
 # Backend Rate Limits
 
-This file documents the current backend rate limiting behavior implemented in
-[backend/src/app.ts](../src/app.ts).
+This document defines the backend rate-limit contract for Leaflet. Runtime
+middleware, OpenAPI output, and automated tests must match this file.
 
-## Scope
+## Header Contract
 
-- This covers the Express backend only.
-- Frontend SPA page loads such as `/`, `/result`, `/expired`, `/error`,
-  `/developer`, frontend `/settings`, and frontend `/admin` are not
-  rate-limited by code in this repo.
-- Every backend request first passes through the global limiter:
-  `300 requests / 15 minutes / IP`.
-- Additional limiters stack on top of that global limiter.
-- Authenticated, privileged, and admin callers do not get separate
-  user-keyed buckets. Outside the anonymous `/api/shorten` case, the
-  implementation is IP-based.
+- Limited endpoints emit `RateLimit` and `RateLimit-Policy` on every response.
+- `429 Too Many Requests` responses also emit `Retry-After`.
+- The backend uses IETF draft-8 rate-limit headers.
+- The backend does not emit legacy `X-RateLimit-*` headers.
+- If multiple buckets apply to one request, the response includes one
+  draft-8 entry per active bucket.
+- If a request is skipped because no bucket applies, the response does not emit
+  rate-limit headers.
 
-## Bucket Keys
+## Actor Keys
 
-- Global limiter: IP address
-- Anonymous `/api/shorten` session limiter: session ID, with IP fallback
-- Anonymous `/api/shorten` IP guard: IP address
-- `/auth/*` limiter: IP address
-- `/auth/me` and `/auth/providers` relaxed limiter: IP address
-- `/admin/*` limiter: IP address
+- Anonymous session buckets are keyed by `req.sessionID`.
+- Anonymous IP buckets are keyed by `req.ip`.
+- Authenticated user buckets are keyed by `user.id`.
+- OAuth token buckets are keyed by `client_id` when present and valid, with
+  `req.ip` as the fallback key.
+- Authenticated admins are skipped for user-scoped buckets and admin probe
+  buckets.
 
-IP-based buckets use Express `req.ip`, so proxy behavior depends on the
-configured `TRUST_PROXY` setting.
+## Bucket Registry
 
-## Matrix
+These policy names should be the central source of truth in the backend.
 
-The two anonymous columns are separate buckets. For anonymous
-`POST /api/shorten` traffic, both of them apply at the same time.
+| Policy | Key | Limit |
+| --- | --- | --- |
+| `csrf-bootstrap-anonymous` | IP | `30 / 5m` |
+| `csrf-bootstrap-user` | user.id | `60 / 5m` |
+| `csrf-bootstrap-privileged` | user.id | `120 / 5m` |
+| `auth-read-anonymous` | IP | `120 / 1m` |
+| `auth-read-user` | user.id | `240 / 1m` |
+| `auth-read-privileged` | user.id | `480 / 1m` |
+| `auth-flow` | IP | `20 / 15m` |
+| `account-user` | user.id | `60 / 15m` |
+| `account-privileged` | user.id | `120 / 15m` |
+| `shorten-anonymous-session` | sessionID | `2 / 1m` |
+| `shorten-anonymous-ip` | IP | `20 / 5m` |
+| `shorten-user` | user.id | `60 / 15m` |
+| `shorten-privileged` | user.id | `180 / 15m` |
+| `openapi-anonymous` | IP | `60 / 5m` |
+| `openapi-user` | user.id | `120 / 5m` |
+| `openapi-privileged` | user.id | `240 / 5m` |
+| `admin-probe` | IP | `30 / 15m` |
+| `oauth-token` | client_id, fallback IP | `60 / 15m` |
+| `oauth-apps-user` | user.id | `60 / 15m` |
+| `oauth-apps-privileged` | user.id | `120 / 15m` |
+
+## Route Matrix
+
+The columns below describe the effective bucket for each caller type.
 
 | Page / subpath | Anonymous (session) | Anonymous (IP) | Authenticated user | Privileged user | Admin |
 | --- | --- | --- | --- | --- | --- |
-| Frontend SPA pages (`/`, `/result`, `/expired`, `/error`, `/developer`, frontend `/settings`, frontend `/admin`) | none in repo | none in repo | none in repo | none in repo | none in repo |
-| `GET /auth/csrf-token` | global `300/15m` per IP | global `300/15m` per IP | global `300/15m` per IP | global `300/15m` per IP | global `300/15m` per IP |
-| `/auth/me` | global `300/15m` per IP + auth-read `120/1m` per IP | same | same | same | same |
-| `/auth/providers` | global `300/15m` per IP + auth-read `120/1m` per IP | same | same | same | same |
-| Other `/auth/*` routes: `/auth/logout`, `/auth/identities`, `/auth/:provider`, `/auth/:provider/link`, provider callbacks, `/auth/merge/*` | global `300/15m` per IP + auth `30/15m` per IP | same | same | same | same |
-| `POST /api/shorten` | global `300/15m` per IP + anonymous session `1/1m` per session + anonymous IP guard `10/1m` per IP | global `300/15m` per IP + anonymous IP guard `10/1m` per IP | global `300/15m` per IP only | global `300/15m` per IP only | global `300/15m` per IP only |
-| `/api/openapi.json` | global `300/15m` per IP only | same | same | same | same |
-| `/api/:code` redirect | global `300/15m` per IP only | same | same | same | same |
-| `/api/urls`, `/api/urls/:id` | global `300/15m` per IP only, then auth and role checks reject access | same | global `300/15m` per IP only, then role checks reject access unless admin | same | global `300/15m` per IP only |
-| `/admin/*` routes: `/admin/urls`, `/admin/users`, `/admin/users/:id/role`, `/admin/urls/:id` | global `300/15m` per IP + admin `60/1m` per IP, then auth and role checks reject access | same | global `300/15m` per IP + admin `60/1m` per IP, then role checks reject access unless admin | same | global `300/15m` per IP + admin `60/1m` per IP |
-| `/oauth/*` routes: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, `/oauth/apps*` | global `300/15m` per IP only | same | same | same | same |
-| `/s/:code` | global `300/15m` per IP only | same | same | same | same |
+| `GET /auth/csrf-token` | none | `csrf-bootstrap-anonymous` | `csrf-bootstrap-user` | `csrf-bootstrap-privileged` | none |
+| `GET /auth/me` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
+| `GET /auth/providers` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
+| `GET /auth/:provider`, `GET /auth/:provider/callback`, `POST /auth/apple/callback` | none | `auth-flow` | `auth-flow` | `auth-flow` | none |
+| `GET /auth/:provider/link` | none | none | `account-user` | `account-privileged` | none |
+| `GET /auth/identities`, `DELETE /auth/identities/:provider`, `POST /auth/logout`, `DELETE /auth/me`, `POST /auth/merge/initiate`, `POST /auth/merge/confirm` | none | none | `account-user` | `account-privileged` | none |
+| `POST /api/shorten` | `shorten-anonymous-session` | `shorten-anonymous-ip` | `shorten-user` | `shorten-privileged` | none |
+| `GET /api/openapi.json` | none | `openapi-anonymous` | `openapi-user` | `openapi-privileged` | none |
+| `GET /api/urls`, `DELETE /api/urls/:id`, `GET /admin/urls`, `DELETE /admin/urls/:id`, `GET /admin/users`, `PATCH /admin/users/:id/role` | none | `admin-probe` | `admin-probe` | `admin-probe` | none |
+| `GET /oauth/authorize`, `POST /oauth/authorize/consent` | none | `auth-flow` | `account-user` | `account-privileged` | none |
+| `POST /oauth/token`, `POST /oauth/revoke` | none | `oauth-token` | `oauth-token` | `oauth-token` | `oauth-token` |
+| `GET /oauth/apps`, `POST /oauth/apps`, `DELETE /oauth/apps/:clientId` | none | none | `oauth-apps-user` | `oauth-apps-privileged` | none |
+| `GET /api/:code`, `GET /s/:code` | none | none | none | none | none |
 
-## Implementation Notes
+## Route Rules
 
-- `GET /auth/csrf-token` is defined before the `/auth` limiters are mounted, so
-  it only gets the global limiter.
-- `/auth/me` and `/auth/providers` are matched by path, not by HTTP method.
-  Today that means `DELETE /auth/me` gets the relaxed `120/1m` bucket too.
-- Authenticated `/api/shorten` requests skip both anonymous limiters because the
-  skip condition is `req.isAuthenticated() || !!req.user`. The earlier bearer
-  auth middleware populates `req.user` for valid OAuth access tokens before rate
-  limiting runs.
-- `/admin/*` has an extra limiter, but the admin-only API routes under
-  `/api/urls` do not. Those routes only inherit the global limiter.
-- All limiters use `standardHeaders: true` and `legacyHeaders: false`, so
-  `RateLimit-*` response headers are emitted on limited routes.
-- Existing automated coverage in
-  [backend/src/__tests__/api.test.ts](../src/__tests__/api.test.ts) currently
-  verifies the anonymous `/api/shorten` behavior.
+- Anonymous `POST /api/shorten` traffic consumes both anonymous buckets at the
+  same time: one session bucket and one IP bucket.
+- Authenticated `POST /api/shorten` traffic consumes only the role-appropriate
+  user bucket.
+- Admin-only route families use the `admin-probe` bucket for any caller that is
+  not an authenticated admin. Authenticated admins are fully skipped.
+- Public redirect endpoints do not have an application-level rate limit.
+- `POST /oauth/token` and `POST /oauth/revoke` are client-scoped, not
+  user-scoped.
+
+## OpenAPI Requirements
+
+- Every limited operation documents `RateLimit` and `RateLimit-Policy` headers
+  on every response status that the operation can return.
+- Every documented `429` response documents `Retry-After`.
+- Unlimited operations do not document rate-limit headers.
+- `GET /api/openapi.json` is rate-limited and must document those headers.
+
