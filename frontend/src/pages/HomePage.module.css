@@ -201,6 +201,15 @@
   color: var(--muted);
 }
 
+.featureLink {
+  text-decoration: none;
+}
+
+.featureLink:hover {
+  color: var(--green-primary);
+  text-decoration: none;
+}
+
 .featureIcon {
   font-size: 1.1rem;
 }

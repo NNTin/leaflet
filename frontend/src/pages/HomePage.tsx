@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { FaGithub } from 'react-icons/fa'
 import api from '../api'
 import { useSession } from '../session'
 import { RateLimitError, parseRetryAfter, useCountdown, formatMMSS } from '../rateLimit'
@@ -194,10 +195,17 @@ export default function HomePage() {
           <span className={styles.featureIcon}>⏱️</span>
           <span>Auto-expiring links</span>
         </div>
-        <div className={styles.feature}>
-          <span className={styles.featureIcon}>📦</span>
+        <a
+          className={`${styles.feature} ${styles.featureLink}`}
+          href="https://github.com/NNTin/leaflet"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span className={styles.featureIcon} aria-hidden="true">
+            <FaGithub />
+          </span>
           <span>Open source</span>
-        </div>
+        </a>
       </div>
     </main>
   )
