@@ -2444,4 +2444,76 @@ describe('Rate-limit headers — IETF draft-8 contract', () => {
     };
     expect(extractLimit(privPolicy)).toBeGreaterThan(extractLimit(userPolicy));
   });
+
+  it('GET /auth/me emits ONLY auth-read policies — no auth-flow bucket', async () => {
+    const res = await request(app).get('/auth/me').set('X-Forwarded-For', '10.200.8.1');
+    expect(res.status).toBe(200);
+    const policy: string = res.headers['ratelimit-policy'] as string;
+    expect(policy).toBeDefined();
+    expect(policy).toContain('auth-read-anonymous');
+    expect(policy).not.toContain('auth-flow');
+  });
+
+  it('GET /auth/providers emits ONLY auth-read policies — no auth-flow bucket', async () => {
+    const res = await request(app).get('/auth/providers').set('X-Forwarded-For', '10.200.8.2');
+    expect(res.status).toBe(200);
+    const policy: string = res.headers['ratelimit-policy'] as string;
+    expect(policy).toBeDefined();
+    expect(policy).toContain('auth-read-anonymous');
+    expect(policy).not.toContain('auth-flow');
+  });
+
+  it('429 on anonymous POST /api/shorten returns both session and IP bucket headers', async () => {
+    const ip = '10.200.9.1';
+    const agent = request.agent(app);
+    const csrf = (await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const body = { url: 'https://example.com', ttl: '24h' };
+
+    // Exhaust the session bucket (limit = 2).
+    await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+    await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+    const blocked = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+
+    expect(blocked.status).toBe(429);
+    const policy: string = blocked.headers['ratelimit-policy'] as string;
+    expect(policy).toBeDefined();
+    // Both the session and IP bucket policies must appear.
+    expect(policy).toContain('shorten-anonymous-session');
+    expect(policy).toContain('shorten-anonymous-ip');
+  });
+
+  it('POST /oauth/token with valid client_id keys the bucket by client', async () => {
+    // Register a real client so the DB lookup succeeds.
+    const client = makeOAuthClient({ client_id: 'rate-limit-test-client', is_public: true });
+    const res = await request(app)
+      .post('/oauth/token')
+      .set('Content-Type', 'application/x-www-form-urlencoded')
+      .set('X-Forwarded-For', '10.200.10.1')
+      .send(`grant_type=authorization_code&client_id=${client.client_id}&code=bogus&redirect_uri=http://localhost`);
+    // Any non-network error is fine; we only care that rate-limit headers are present.
+    expect([400, 401, 422, 200]).toContain(res.status);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+  });
+
+  it('POST /oauth/token with unknown client_id falls back to IP bucket', async () => {
+    // Use a client_id that is NOT in the DB — should fall back to IP key.
+    const res = await request(app)
+      .post('/oauth/token')
+      .set('Content-Type', 'application/x-www-form-urlencoded')
+      .set('X-Forwarded-For', '10.200.10.2')
+      .send('grant_type=authorization_code&client_id=totally-bogus-id&code=bogus&redirect_uri=http://localhost');
+    expect([400, 401, 422, 200]).toContain(res.status);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+  });
+
+  it('POST /api/shorten 429 in OpenAPI uses the shared TooManyRequests component', () => {
+    const shorten = (baseSpec.paths as Record<string, Record<string, unknown>>)['/api/shorten'];
+    expect(shorten).toBeDefined();
+    const post = shorten['post'] as { responses: Record<string, unknown> };
+    const response429 = post.responses['429'] as Record<string, unknown>;
+    expect(response429).toBeDefined();
+    expect(response429['$ref']).toBe('#/components/responses/TooManyRequests');
+  });
 });

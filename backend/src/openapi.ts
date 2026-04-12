@@ -2020,27 +2020,12 @@ const spec: OpenApiDocument = {
             }
           },
           "429": {
-            "headers": {
-              "RateLimit": {
-                "$ref": "#/components/headers/RateLimit"
-              },
-              "RateLimit-Policy": {
-                "$ref": "#/components/headers/RateLimit-Policy"
-              }
-            },
-            "description": "Rate limit exceeded (anonymous users)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
     },
-        "/api/openapi.json": {
+    "/api/openapi.json": {
       "get": {
         "summary": "Get the OpenAPI specification",
         "tags": [

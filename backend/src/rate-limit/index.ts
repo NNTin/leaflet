@@ -15,6 +15,7 @@
 
 import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import pool from '../db';
 
 // ---------------------------------------------------------------------------
 // Bucket registry — single source of truth for all policy names and limits
@@ -107,7 +108,7 @@ function userId(req: Request): string {
  */
 export function createRoleLimiter(
   policy: string,
-  keyGenerator: (req: Request) => string,
+  keyGenerator: (req: Request, res: Response) => string | Promise<string>,
   skip: (req: Request) => boolean,
 ): RequestHandler {
   const cfg = BUCKET_CONFIGS[policy];
@@ -118,6 +119,7 @@ export function createRoleLimiter(
     max: cfg.max,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
+    identifier: policy,
     keyGenerator,
     skip,
     message: { success: false, error: 'Rate limit exceeded.', hint: 'Please wait before retrying.' },
@@ -154,6 +156,10 @@ export function composeLimiters(...limiters: RequestHandler[]): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const rateLimitValues: string[] = [];
     const rateLimitPolicyValues: string[] = [];
+
+    // Arguments captured from the first blocking limiter's res.end call.
+    // When set, the final step will replay this call to send the 429 response.
+    let blockedEndArgs: Parameters<Response['end']> | null = null;
 
     const mutableRes = res as MutableResponse;
     const origSetHeader: AnyFn = mutableRes.setHeader.bind(res);
@@ -195,13 +201,18 @@ export function composeLimiters(...limiters: RequestHandler[]): RequestHandler {
       return origSetHeader(name, value) as Response;
     };
 
-    // Intercept res.end so headers are committed even when a 429 is returned
-    // (the limiter calls res.end indirectly via res.json/res.send before our
-    // runNext chain has a chance to flush them).
+    // Intercept res.end so that when a limiter fires a 429, we capture the
+    // response args and continue running the remaining limiters to collect
+    // their RateLimit headers, rather than sending immediately.  Only after
+    // all limiters have had a chance to run do we commit the combined headers
+    // and replay the captured end() call.
     mutableRes.end = function interceptEnd(...args: Parameters<Response['end']>): Response {
-      cleanup();
-      commitHeaders();
-      return origEnd(...args) as Response;
+      if (blockedEndArgs === null) {
+        blockedEndArgs = args;
+      }
+      // Continue the chain instead of sending now.
+      runNext();
+      return res;
     };
 
     let idx = 0;
@@ -213,15 +224,16 @@ export function composeLimiters(...limiters: RequestHandler[]): RequestHandler {
         return;
       }
 
-      if (res.headersSent) {
-        cleanup();
-        return;
-      }
-
       if (idx >= limiters.length) {
+        // All limiters have run.  Restore originals, commit merged headers,
+        // then either send the captured 429 or call next().
         cleanup();
         commitHeaders();
-        next();
+        if (blockedEndArgs !== null) {
+          origEnd(...blockedEndArgs);
+        } else {
+          next();
+        }
         return;
       }
 
@@ -360,9 +372,30 @@ export const adminProbeLimiter: RequestHandler = composeLimiters(
 export const oauthTokenLimiter: RequestHandler = composeLimiters(
   createRoleLimiter(
     POLICY.OAUTH_TOKEN,
-    (req) => {
-      const clientId = typeof req.body?.client_id === 'string' ? req.body.client_id as string : undefined;
-      return clientId ? `client:${clientId}` : (req.ip ?? '0.0.0.0');
+    async (req) => {
+      // Use a pre-validated Bearer-based client_id if available (set by earlyBearerAuthMiddleware).
+      if (req.oauthClientId) {
+        return `client:${req.oauthClientId}`;
+      }
+
+      // For client-credentials grant, the client_id is passed in the request body.
+      // Validate it against the DB to prevent bucket-key rotation with fake client IDs.
+      const rawClientId = typeof req.body?.client_id === 'string' ? (req.body.client_id as string) : undefined;
+      if (rawClientId) {
+        try {
+          const result = await pool.query(
+            'SELECT * FROM oauth_clients WHERE client_id = $1',
+            [rawClientId],
+          );
+          if (result.rows.length > 0) {
+            return `client:${rawClientId}`;
+          }
+        } catch {
+          // DB error — fall back to IP
+        }
+      }
+
+      return req.ip ?? '0.0.0.0';
     },
     () => false,
   ),
