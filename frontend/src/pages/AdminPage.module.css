@@ -171,3 +171,11 @@
   font-size: 0.97rem;
   color: var(--muted);
 }
+
+.rateLimitMsg {
+  font-size: 0.9rem;
+  color: #e53e3e;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}

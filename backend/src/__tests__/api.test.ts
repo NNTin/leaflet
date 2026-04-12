@@ -807,16 +807,49 @@ describe('GET /api/:code - redirect contract', () => {
 });
 
 describe('GET /s/:code - canonical redirect contract', () => {
-  it('returns 302 to original URL for active short code', async () => {
+  it('returns 302 to original URL for active short code (no Accept header)', async () => {
     db.urls.push({ id: 1, short_code: 'active1', original_url: 'https://example.com', expires_at: new Date(Date.now() + 86400000), is_custom: false, user_id: null, created_at: new Date() });
     const res = await request(app).get('/s/active1').redirects(0);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('https://example.com');
   });
 
-  it('returns 404 JSON for expired short code', async () => {
-    db.urls.push({ id: 2, short_code: 'expired1', original_url: 'https://example.com', expires_at: new Date(Date.now() - 1000), is_custom: false, user_id: null, created_at: new Date() });
+  it('returns 302 to original URL for active short code (browser Accept header)', async () => {
+    db.urls.push({ id: 2, short_code: 'active2', original_url: 'https://example.com', expires_at: new Date(Date.now() + 86400000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/s/active2').set('Accept', 'text/html,application/xhtml+xml,*/*').redirects(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('https://example.com');
+  });
+
+  it('returns 404 JSON for expired short code when no Accept header (machine caller)', async () => {
+    db.urls.push({ id: 3, short_code: 'expired1', original_url: 'https://example.com', expires_at: new Date(Date.now() - 1000), is_custom: false, user_id: null, created_at: new Date() });
     const res = await request(app).get('/s/expired1');
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error');
+  });
+
+  it('returns 404 JSON for expired short code when Accept is application/json', async () => {
+    db.urls.push({ id: 4, short_code: 'expired2', original_url: 'https://example.com', expires_at: new Date(Date.now() - 1000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/s/expired2').set('Accept', 'application/json');
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error');
+  });
+
+  it('redirects browser to /expired when expired short code and Accept includes text/html', async () => {
+    db.urls.push({ id: 5, short_code: 'expired3', original_url: 'https://example.com', expires_at: new Date(Date.now() - 1000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/s/expired3').set('Accept', 'text/html,*/*').redirects(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('/expired');
+  });
+
+  it('redirects browser to /expired when nonexistent short code and Accept includes text/html', async () => {
+    const res = await request(app).get('/s/doesnotexist').set('Accept', 'text/html').redirects(0);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('/expired');
+  });
+
+  it('returns 404 JSON for nonexistent short code with no Accept header', async () => {
+    const res = await request(app).get('/s/doesnotexist');
     expect(res.status).toBe(404);
     expect(res.body).toHaveProperty('error');
   });

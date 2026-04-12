@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import api from '../api'
 import { useSession } from '../session'
+import { RateLimitError, parseRetryAfter, useCountdown, formatMMSS } from '../rateLimit'
 import styles from './HomePage.module.css'
 
 interface TtlOption {
@@ -32,6 +33,10 @@ export default function HomePage() {
   const [alias, setAlias] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [rateLimitDeadline, setRateLimitDeadline] = useState<number | null>(null)
+
+  const countdown = useCountdown(rateLimitDeadline)
+  const isRateLimited = rateLimitDeadline !== null && !countdown.isExpired
 
   const ttlOptions = user?.role === 'admin'
     ? [...TTL_OPTIONS, ADMIN_TTL]
@@ -41,7 +46,12 @@ export default function HomePage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    // Guard: still in rate-limit window
+    if (isRateLimited) return
+
     setError('')
+    setRateLimitDeadline(null)
 
     if (!url.trim()) {
       setError('Please enter a URL.')
@@ -66,9 +76,18 @@ export default function HomePage() {
       const { shortCode, shortUrl, expiresAt } = res.data
       navigate('/result', { state: { shortCode, shortUrl, expiresAt } })
     } catch (err) {
-      if (axios.isAxiosError(err)) {
-        const msg = err.response?.data?.error ?? err.response?.data?.message ?? 'Failed to shorten URL. Please try again.'
-        setError(msg)
+      if (err instanceof RateLimitError) {
+        // CSRF bootstrap was rate-limited
+        setRateLimitDeadline(parseRetryAfter(err.retryAfter))
+      } else if (axios.isAxiosError(err)) {
+        if (err.response?.status === 429) {
+          // Shorten endpoint was rate-limited
+          const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+          setRateLimitDeadline(parseRetryAfter(retryAfter))
+        } else {
+          const msg = err.response?.data?.error ?? err.response?.data?.message ?? 'Failed to shorten URL. Please try again.'
+          setError(msg)
+        }
       } else {
         setError('Failed to shorten URL. Please try again.')
       }
@@ -145,12 +164,23 @@ export default function HomePage() {
 
           {error && <div className="error-msg">{error}</div>}
 
+          {isRateLimited && (
+            <div className={styles.rateLimitMsg} aria-live="polite">
+              Too many requests. Try again in {formatMMSS(countdown.msLeft)}.
+            </div>
+          )}
+
           <button
             type="submit"
             className={`btn btn-primary ${styles.submitBtn}`}
-            disabled={loading}
+            disabled={loading || isRateLimited}
+            aria-disabled={loading || isRateLimited}
           >
-            {loading ? 'Shortening…' : '✂️ Shorten URL'}
+            {loading
+              ? 'Shortening…'
+              : isRateLimited
+              ? `⏱ ${formatMMSS(countdown.msLeft)}`
+              : '✂️ Shorten URL'}
           </button>
         </form>
       </div>

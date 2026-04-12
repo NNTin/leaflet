@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 import { authUrl } from '../urls'
 import { PROVIDER_META_MAP } from '../providers'
+import { parseRetryAfter, useCountdown, formatMMSS, type RateLimitState } from '../rateLimit'
 import styles from './LoginModal.module.css'
 
 interface AvailableProvider {
@@ -16,19 +17,41 @@ interface LoginModalProps {
 export default function LoginModal({ onClose }: LoginModalProps) {
   const [providers, setProviders] = useState<AvailableProvider[] | null>(null)
   const [error, setError] = useState(false)
+  const [rateLimited, setRateLimited] = useState<RateLimitState | null>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
 
   const fetchProviders = useCallback(() => {
     setError(false)
+    setRateLimited(null)
     axios
       .get<AvailableProvider[]>(authUrl('/providers'), { withCredentials: true })
       .then((res) => setProviders(res.data))
-      .catch(() => setError(true))
+      .catch((err: unknown) => {
+        if (axios.isAxiosError(err) && err.response?.status === 429) {
+          const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+          setRateLimited({
+            message: 'Sign-in options rate limited.',
+            retryDeadline: parseRetryAfter(retryAfter),
+            isAutoRetry: true,
+          })
+        } else {
+          setError(true)
+        }
+      })
   }, [])
 
   useEffect(() => {
     fetchProviders()
   }, [fetchProviders])
+
+  // Auto-retry when rate-limited.
+  const countdown = useCountdown(rateLimited?.retryDeadline ?? null)
+  useEffect(() => {
+    if (!rateLimited?.isAutoRetry) return
+    const msLeft = Math.max(0, rateLimited.retryDeadline - Date.now())
+    const id = setTimeout(() => fetchProviders(), msLeft + 100)
+    return () => clearTimeout(id)
+  }, [rateLimited, fetchProviders])
 
   // Close on Escape key.
   useEffect(() => {
@@ -89,20 +112,29 @@ export default function LoginModal({ onClose }: LoginModalProps) {
             </div>
           )}
 
-          {!error && providers === null && (
+          {!error && rateLimited && (
+            <div className={styles.rateLimitState} aria-live="polite">
+              <p>Sign-in options temporarily unavailable.</p>
+              <p className={styles.rateLimitCountdown}>
+                {countdown.isExpired ? 'Retrying…' : `Retrying in ${formatMMSS(countdown.msLeft)}`}
+              </p>
+            </div>
+          )}
+
+          {!error && !rateLimited && providers === null && (
             <div className={styles.loadingState} aria-live="polite">
               <span className={styles.spinner} aria-hidden="true" />
               <span>Loading…</span>
             </div>
           )}
 
-          {!error && providers !== null && providers.length === 0 && (
+          {!error && !rateLimited && providers !== null && providers.length === 0 && (
             <p className={styles.emptyState}>
               No sign-in providers are currently configured. Please contact the server administrator.
             </p>
           )}
 
-          {!error && providers !== null && providers.length > 0 && (
+          {!error && !rateLimited && providers !== null && providers.length > 0 && (
             <ul className={styles.providerList} role="list">
               {providers.map(({ name, label }) => {
                 const meta = PROVIDER_META_MAP[name]

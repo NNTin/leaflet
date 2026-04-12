@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { csrfHeaders } from '../api'
 import { adminUrl, shortUrl } from '../urls'
 import { useSession } from '../session'
+import { parseRetryAfter, useCountdown, formatMMSS } from '../rateLimit'
 import styles from './AdminPage.module.css'
 
 const adminApi = axios.create({ baseURL: adminUrl(''), withCredentials: true })
@@ -31,49 +32,85 @@ export default function AdminPage() {
   const [links, setLinks] = useState<LinkItem[]>([])
   const [linksLoading, setLinksLoading] = useState(false)
   const [linksError, setLinksError] = useState('')
+  const [linksRateLimitDeadline, setLinksRateLimitDeadline] = useState<number | null>(null)
 
   const [users, setUsers] = useState<User[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersError, setUsersError] = useState('')
+  const [usersRateLimitDeadline, setUsersRateLimitDeadline] = useState<number | null>(null)
 
   const [actionMsg, setActionMsg] = useState('')
   const [actionError, setActionError] = useState('')
+  const [writeRateLimitDeadline, setWriteRateLimitDeadline] = useState<number | null>(null)
+
+  const linksCountdown = useCountdown(linksRateLimitDeadline)
+  const usersCountdown = useCountdown(usersRateLimitDeadline)
+  const writeCountdown = useCountdown(writeRateLimitDeadline)
+
+  const fetchLinks = useCallback(async () => {
+    setLinksLoading(true)
+    setLinksError('')
+    setLinksRateLimitDeadline(null)
+    try {
+      const res = await adminApi.get<LinkItem[] | { urls: LinkItem[] }>('/urls')
+      setLinks(Array.isArray(res.data) ? res.data : res.data.urls ?? [])
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+        setLinksRateLimitDeadline(parseRetryAfter(retryAfter))
+      } else {
+        setLinksError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load links.' : 'Failed to load links.')
+      }
+    } finally {
+      setLinksLoading(false)
+    }
+  }, [])
+
+  const fetchUsers = useCallback(async () => {
+    setUsersLoading(true)
+    setUsersError('')
+    setUsersRateLimitDeadline(null)
+    try {
+      const res = await adminApi.get<User[] | { users: User[] }>('/users')
+      setUsers(Array.isArray(res.data) ? res.data : res.data.users ?? [])
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+        setUsersRateLimitDeadline(parseRetryAfter(retryAfter))
+      } else {
+        setUsersError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load users.' : 'Failed to load users.')
+      }
+    } finally {
+      setUsersLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (user?.role !== 'admin') return
     if (tab === 'links') void fetchLinks()
     if (tab === 'users') void fetchUsers()
-  }, [tab, user])
+  }, [tab, user, fetchLinks, fetchUsers])
 
-  async function fetchLinks() {
-    setLinksLoading(true)
-    setLinksError('')
-    try {
-      const res = await adminApi.get<LinkItem[] | { urls: LinkItem[] }>('/urls')
-      setLinks(Array.isArray(res.data) ? res.data : res.data.urls ?? [])
-    } catch (err) {
-      setLinksError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load links.' : 'Failed to load links.')
-    } finally {
-      setLinksLoading(false)
-    }
-  }
+  // Auto-retry links when rate-limited.
+  useEffect(() => {
+    if (!linksRateLimitDeadline) return
+    const msLeft = Math.max(0, linksRateLimitDeadline - Date.now())
+    const id = setTimeout(() => void fetchLinks(), msLeft + 100)
+    return () => clearTimeout(id)
+  }, [linksRateLimitDeadline, fetchLinks])
 
-  async function fetchUsers() {
-    setUsersLoading(true)
-    setUsersError('')
-    try {
-      const res = await adminApi.get<User[] | { users: User[] }>('/users')
-      setUsers(Array.isArray(res.data) ? res.data : res.data.users ?? [])
-    } catch (err) {
-      setUsersError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to load users.' : 'Failed to load users.')
-    } finally {
-      setUsersLoading(false)
-    }
-  }
+  // Auto-retry users when rate-limited.
+  useEffect(() => {
+    if (!usersRateLimitDeadline) return
+    const msLeft = Math.max(0, usersRateLimitDeadline - Date.now())
+    const id = setTimeout(() => void fetchUsers(), msLeft + 100)
+    return () => clearTimeout(id)
+  }, [usersRateLimitDeadline, fetchUsers])
 
   function clearMessages() {
     setActionMsg('')
     setActionError('')
+    setWriteRateLimitDeadline(null)
   }
 
   async function deleteLink(id: number) {
@@ -84,7 +121,12 @@ export default function AdminPage() {
       setLinks(prev => prev.filter(l => l.id !== id))
       setActionMsg('Link deleted.')
     } catch (err) {
-      setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to delete link.' : 'Failed to delete link.')
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+        setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
+      } else {
+        setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to delete link.' : 'Failed to delete link.')
+      }
     }
   }
 
@@ -96,9 +138,16 @@ export default function AdminPage() {
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
       setActionMsg(`User role updated to "${role}".`)
     } catch (err) {
-      setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to update user role.' : 'Failed to update user role.')
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+        setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
+      } else {
+        setActionError(axios.isAxiosError(err) ? err.response?.data?.error ?? 'Failed to update user role.' : 'Failed to update user role.')
+      }
     }
   }
+
+  const isWriteRateLimited = writeRateLimitDeadline !== null && !writeCountdown.isExpired
 
   if (loading) {
     return (
@@ -147,6 +196,12 @@ export default function AdminPage() {
         </div>
       )}
 
+      {isWriteRateLimited && (
+        <div className={styles.rateLimitMsg} aria-live="polite">
+          Too many requests. You can retry in {formatMMSS(writeCountdown.msLeft)}.
+        </div>
+      )}
+
         {tab === 'links' && (
           <div className={`card ${styles.tableCard}`}>
             <div className={styles.tableHeader}>
@@ -155,6 +210,10 @@ export default function AdminPage() {
             </div>
             {linksLoading ? (
               <div className={styles.center}><LoadingSpinner /></div>
+            ) : linksRateLimitDeadline && !linksCountdown.isExpired ? (
+              <div className={styles.rateLimitMsg} aria-live="polite">
+                Rate limited. Retrying in {formatMMSS(linksCountdown.msLeft)}…
+              </div>
             ) : linksError ? (
               <div className="error-msg">{linksError}</div>
             ) : links.length === 0 ? (
@@ -203,6 +262,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => void deleteLink(link.id)}
                             className="btn btn-danger btn-sm"
+                            disabled={isWriteRateLimited}
                           >
                             Delete
                           </button>
@@ -224,6 +284,10 @@ export default function AdminPage() {
             </div>
             {usersLoading ? (
               <div className={styles.center}><LoadingSpinner /></div>
+            ) : usersRateLimitDeadline && !usersCountdown.isExpired ? (
+              <div className={styles.rateLimitMsg} aria-live="polite">
+                Rate limited. Retrying in {formatMMSS(usersCountdown.msLeft)}…
+              </div>
             ) : usersError ? (
               <div className="error-msg">{usersError}</div>
             ) : users.length === 0 ? (
@@ -254,6 +318,7 @@ export default function AdminPage() {
                             <button
                               onClick={() => void setUserRole(u.id, 'privileged')}
                               className="btn btn-secondary btn-sm"
+                              disabled={isWriteRateLimited}
                             >
                               Make Privileged
                             </button>
@@ -262,6 +327,7 @@ export default function AdminPage() {
                             <button
                               onClick={() => void setUserRole(u.id, 'user')}
                               className="btn btn-secondary btn-sm"
+                              disabled={isWriteRateLimited}
                             >
                               Make User
                             </button>

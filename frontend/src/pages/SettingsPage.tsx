@@ -6,6 +6,7 @@ import { csrfHeaders } from '../api'
 import { providersCache, MISS } from '../authCache'
 import { PROVIDER_META_MAP } from '../providers'
 import { useSession } from '../session'
+import { parseRetryAfter, useCountdown, formatMMSS } from '../rateLimit'
 import styles from './SettingsPage.module.css'
 
 interface Identity {
@@ -68,16 +69,23 @@ export default function SettingsPage() {
   const { user, loading, clearSession } = useSession()
   const [identities, setIdentities] = useState<Identity[]>([])
   const [loadingIdentities, setLoadingIdentities] = useState(false)
+  const [identitiesRateLimitDeadline, setIdentitiesRateLimitDeadline] = useState<number | null>(null)
   const [availableProviders, setAvailableProviders] = useState<string[] | null>(null)
   const [providersError, setProvidersError] = useState<string | null>(null)
+  const [providersRateLimitDeadline, setProvidersRateLimitDeadline] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState<string | null>(null)
+  const [writeRateLimitDeadline, setWriteRateLimitDeadline] = useState<number | null>(null)
   const [linkConflict, setLinkConflict] = useState<LinkConflict | null>(() => readLinkConflict())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState('')
   const [deleting, setDeleting] = useState(false)
   const deleteInputRef = useRef<HTMLInputElement>(null)
+
+  const providersCountdown = useCountdown(providersRateLimitDeadline)
+  const identitiesCountdown = useCountdown(identitiesRateLimitDeadline)
+  const writeCountdown = useCountdown(writeRateLimitDeadline)
 
   // Close delete modal on Escape key.
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function SettingsPage() {
   }, [showDeleteModal, deleting])
 
   // Fetch which providers are configured on this server (with cache, proper error handling).
-  useEffect(() => {
+  const fetchProviders = useCallback(() => {
     if (!user) return
 
     const cached = providersCache.get()
@@ -98,6 +106,9 @@ export default function SettingsPage() {
       setAvailableProviders(cached)
       return
     }
+
+    setProvidersError(null)
+    setProvidersRateLimitDeadline(null)
 
     axios
       .get<{ name: string }[]>(authUrl('/providers'), { withCredentials: true })
@@ -107,25 +118,45 @@ export default function SettingsPage() {
         setAvailableProviders(names)
         setProvidersError(null)
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (axios.isAxiosError(err) && err.response?.status === 429) {
-          setProvidersError('You are being rate limited. Please try again shortly.')
+          const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+          setProvidersRateLimitDeadline(parseRetryAfter(retryAfter))
+          setAvailableProviders(null)
         } else {
           setProvidersError('Could not load connected account options. Please try again.')
+          setAvailableProviders(null)
         }
-        setAvailableProviders(null)
       })
   }, [user])
+
+  useEffect(() => {
+    fetchProviders()
+  }, [fetchProviders])
+
+  // Auto-retry providers when rate-limited.
+  useEffect(() => {
+    if (!providersRateLimitDeadline) return
+    const msLeft = Math.max(0, providersRateLimitDeadline - Date.now())
+    const id = setTimeout(() => fetchProviders(), msLeft + 100)
+    return () => clearTimeout(id)
+  }, [providersRateLimitDeadline, fetchProviders])
 
   // Fetch connected identities once user is known.
   const fetchIdentities = useCallback(async () => {
     if (!user) return
     setLoadingIdentities(true)
+    setIdentitiesRateLimitDeadline(null)
     try {
       const res = await axios.get<IdentitiesResponse>(authUrl('/identities'), { withCredentials: true })
       setIdentities(normalizeIdentities(res.data))
-    } catch {
-      setError('Failed to load connected accounts.')
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+        setIdentitiesRateLimitDeadline(parseRetryAfter(retryAfter))
+      } else {
+        setError('Failed to load connected accounts.')
+      }
     } finally {
       setLoadingIdentities(false)
     }
@@ -134,6 +165,14 @@ export default function SettingsPage() {
   useEffect(() => {
     void fetchIdentities()
   }, [fetchIdentities])
+
+  // Auto-retry identities when rate-limited.
+  useEffect(() => {
+    if (!identitiesRateLimitDeadline) return
+    const msLeft = Math.max(0, identitiesRateLimitDeadline - Date.now())
+    const id = setTimeout(() => void fetchIdentities(), msLeft + 100)
+    return () => clearTimeout(id)
+  }, [identitiesRateLimitDeadline, fetchIdentities])
 
   useEffect(() => {
     if (!linkConflict) return
@@ -155,6 +194,7 @@ export default function SettingsPage() {
     if (actionPending) return
     setError(null)
     setSuccess(null)
+    setWriteRateLimitDeadline(null)
     setActionPending(provider)
     try {
       const headers = await csrfHeaders()
@@ -165,8 +205,13 @@ export default function SettingsPage() {
       await fetchIdentities()
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        const msg = (err.response?.data as { error?: string })?.error
-        setError(msg ?? 'Failed to disconnect account.')
+        if (err.response?.status === 429) {
+          const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+          setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
+        } else {
+          const msg = (err.response?.data as { error?: string })?.error
+          setError(msg ?? 'Failed to disconnect account.')
+        }
       } else {
         setError('Unexpected error.')
       }
@@ -180,6 +225,7 @@ export default function SettingsPage() {
 
     setError(null)
     setSuccess(null)
+    setWriteRateLimitDeadline(null)
     setActionPending('merge')
 
     try {
@@ -219,8 +265,13 @@ export default function SettingsPage() {
       setSuccess(`${label} is now connected after merging the duplicate account.`)
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        const msg = (err.response?.data as { error?: string; hint?: string } | undefined)
-        setError(msg?.error ?? msg?.hint ?? 'Failed to merge the duplicate account.')
+        if (err.response?.status === 429) {
+          const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+          setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
+        } else {
+          const msg = (err.response?.data as { error?: string; hint?: string } | undefined)
+          setError(msg?.error ?? msg?.hint ?? 'Failed to merge the duplicate account.')
+        }
       } else {
         setError('Unexpected error.')
       }
@@ -254,6 +305,7 @@ export default function SettingsPage() {
   async function handleDeleteAccount() {
     if (deleteConfirm !== 'DELETE' || deleting) return
     setDeleting(true)
+    setWriteRateLimitDeadline(null)
     try {
       const headers = await csrfHeaders()
       await axios.delete(authUrl('/me'), { withCredentials: true, headers })
@@ -261,17 +313,25 @@ export default function SettingsPage() {
       window.location.href = '/'
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        const msg = (err.response?.data as { error?: string })?.error
-        setError(msg ?? 'Failed to delete account.')
+        if (err.response?.status === 429) {
+          const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+          setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
+          setShowDeleteModal(false)
+        } else {
+          const msg = (err.response?.data as { error?: string })?.error
+          setError(msg ?? 'Failed to delete account.')
+          setShowDeleteModal(false)
+        }
       } else {
         setError('Unexpected error.')
+        setShowDeleteModal(false)
       }
       setDeleting(false)
-      setShowDeleteModal(false)
     }
   }
 
   const connectedProviders = new Set(identities.map((i) => i.provider))
+  const isWriteRateLimited = writeRateLimitDeadline !== null && !writeCountdown.isExpired
 
   if (loading) {
     return (
@@ -303,7 +363,7 @@ export default function SettingsPage() {
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={handleMergeConflict}
-                  disabled={actionPending !== null}
+                  disabled={actionPending !== null || isWriteRateLimited}
                 >
                   {actionPending === 'merge' ? 'Merging…' : 'Merge accounts'}
                 </button>
@@ -321,6 +381,12 @@ export default function SettingsPage() {
           {success && <div className={styles.success}>{success}</div>}
           {error && <div className={styles.error}>{error}</div>}
 
+          {isWriteRateLimited && (
+            <div className={styles.rateLimitMsg} aria-live="polite">
+              Too many requests. You can retry in {formatMMSS(writeCountdown.msLeft)}.
+            </div>
+          )}
+
           <section className={styles.section}>
             <div className={styles.sectionHeader}>
               <span>🔗</span>
@@ -335,6 +401,18 @@ export default function SettingsPage() {
 
             {providersError && (
               <div className={styles.error}>{providersError}</div>
+            )}
+
+            {providersRateLimitDeadline && !providersCountdown.isExpired && (
+              <div className={styles.rateLimitMsg} aria-live="polite">
+                Provider list rate limited. Retrying in {formatMMSS(providersCountdown.msLeft)}…
+              </div>
+            )}
+
+            {identitiesRateLimitDeadline && !identitiesCountdown.isExpired && (
+              <div className={styles.rateLimitMsg} aria-live="polite">
+                Identity list rate limited. Retrying in {formatMMSS(identitiesCountdown.msLeft)}…
+              </div>
             )}
 
             {loadingIdentities ? (
@@ -372,7 +450,7 @@ export default function SettingsPage() {
                           <span className={styles.connectedBadge}>✓ Connected</span>
                           <button
                             className="btn btn-secondary btn-sm"
-                            disabled={isLastIdentity || actionPending !== null}
+                            disabled={isLastIdentity || actionPending !== null || isWriteRateLimited}
                             title={isLastIdentity ? 'Cannot disconnect your only login method.' : `Disconnect ${label}`}
                             onClick={() => handleDisconnect(name)}
                           >
@@ -406,7 +484,7 @@ export default function SettingsPage() {
             <button
               className="btn btn-danger btn-sm"
               onClick={openDeleteModal}
-              disabled={actionPending !== null}
+              disabled={actionPending !== null || isWriteRateLimited}
             >
               Delete Account
             </button>

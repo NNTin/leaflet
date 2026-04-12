@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { apiUrl, authUrl } from './urls'
+import { RateLimitError } from './rateLimit'
 
 const api = axios.create({
   baseURL: apiUrl(''),
@@ -12,7 +13,11 @@ async function fetchCsrfToken(): Promise<void> {
   try {
     const res = await axios.get<{ csrfToken?: string; token?: string }>(authUrl('/csrf-token'), { withCredentials: true })
     csrfToken = res.data?.csrfToken ?? res.data?.token ?? null
-  } catch {
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 429) {
+      const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
+      throw new RateLimitError(retryAfter)
+    }
     csrfToken = null
   }
 }
