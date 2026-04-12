@@ -726,7 +726,7 @@ describe('OpenAPI TTL enum contract', () => {
 });
 
 describe('POST /api/shorten - anonymous rate limiting', () => {
-  it('allows first request and blocks second (429) from same IP', async () => {
+  it('allows two requests then blocks the third (429) from the same anonymous session', async () => {
     const ip = '10.99.1.1';
     const agent = request.agent(app);
     const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip);
@@ -737,10 +737,13 @@ describe('POST /api/shorten - anonymous rate limiting', () => {
     expect(first.status).toBe(201);
 
     const second = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
-    expect(second.status).toBe(429);
+    expect(second.status).toBe(201);
+
+    const third = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+    expect(third.status).toBe(429);
   });
 
-  it('allows one request per anonymous session even when sessions share the same IP', async () => {
+  it('allows two requests per anonymous session even when sessions share the same IP', async () => {
     const ip = '10.99.1.2';
     const body = { url: 'https://example.com', ttl: '24h' };
 
@@ -748,6 +751,8 @@ describe('POST /api/shorten - anonymous rate limiting', () => {
     const csrfOne = (await agentOne.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
     const first = await agentOne.post('/api/shorten').set('X-CSRF-Token', csrfOne).set('X-Forwarded-For', ip).send(body);
     expect(first.status).toBe(201);
+    const firstB = await agentOne.post('/api/shorten').set('X-CSRF-Token', csrfOne).set('X-Forwarded-For', ip).send(body);
+    expect(firstB.status).toBe(201);
 
     const agentTwo = request.agent(app);
     const csrfTwo = (await agentTwo.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
@@ -759,7 +764,7 @@ describe('POST /api/shorten - anonymous rate limiting', () => {
     const ip = '10.99.1.3';
     const body = { url: 'https://example.com', ttl: '24h' };
 
-    for (let index = 0; index < 10; index += 1) {
+    for (let index = 0; index < 20; index += 1) {
       const agent = request.agent(app);
       const csrf = (await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
       const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
@@ -2235,5 +2240,207 @@ describe('DELETE /auth/me - account deletion', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// Rate-limit header contract tests
+// ============================================================================
+
+describe('Rate-limit headers — IETF draft-8 contract', () => {
+  it('GET /auth/csrf-token emits RateLimit and RateLimit-Policy for anonymous requests', async () => {
+    const res = await request(app).get('/auth/csrf-token').set('X-Forwarded-For', '10.200.0.1');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+    expect(res.headers['x-ratelimit-limit']).toBeUndefined();
+  });
+
+  it('GET /auth/csrf-token emits no rate-limit headers for admin', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['user:read']);
+    const res = await request(app)
+      .get('/auth/csrf-token')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.0.2');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('GET /auth/me emits RateLimit headers for anonymous requests', async () => {
+    const res = await request(app).get('/auth/me').set('X-Forwarded-For', '10.200.1.1');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+  });
+
+  it('GET /auth/me emits no rate-limit headers for admin', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['user:read']);
+    const res = await request(app)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.1.2');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('POST /api/shorten for anonymous user emits both session and IP bucket headers', async () => {
+    const ip = '10.200.2.1';
+    const agent = request.agent(app);
+    const csrf = (await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+
+    const res = await agent
+      .post('/api/shorten')
+      .set('X-CSRF-Token', csrf)
+      .set('X-Forwarded-For', ip)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+    // Both session and IP policies should appear (comma-separated).
+    expect(res.headers['ratelimit-policy']).toContain(',');
+  });
+
+  it('POST /api/shorten for authenticated user emits only one bucket header', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['shorten:create']);
+
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.2.2')
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+    // Only one user-scoped policy.
+    expect(res.headers['ratelimit-policy']).not.toContain(',');
+  });
+
+  it('POST /api/shorten for admin emits no rate-limit headers', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['shorten:create']);
+
+    const res = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.2.3')
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('GET /api/openapi.json emits RateLimit headers for anonymous', async () => {
+    const res = await request(app).get('/api/openapi.json').set('X-Forwarded-For', '10.200.3.1');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+  });
+
+  it('GET /api/openapi.json emits no rate-limit headers for admin', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['user:read']);
+    const res = await request(app)
+      .get('/api/openapi.json')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.3.2');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('GET /s/:code emits no rate-limit headers (unlimited endpoint)', async () => {
+    db.urls.push({ id: 99, short_code: 'rl-test', original_url: 'https://example.com', expires_at: new Date(Date.now() + 86400000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/s/rl-test').redirects(0).set('X-Forwarded-For', '10.200.4.1');
+    expect(res.status).toBe(302);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('GET /api/:code emits no rate-limit headers (unlimited endpoint)', async () => {
+    db.urls.push({ id: 98, short_code: 'rl-test2', original_url: 'https://example.com', expires_at: new Date(Date.now() + 86400000), is_custom: false, user_id: null, created_at: new Date() });
+    const res = await request(app).get('/api/rl-test2').redirects(0).set('X-Forwarded-For', '10.200.4.2');
+    expect(res.status).toBe(302);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('429 response includes Retry-After header', async () => {
+    const ip = '10.200.5.1';
+    const agent = request.agent(app);
+    const csrf = (await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip)).body.csrfToken as string;
+    const body = { url: 'https://example.com', ttl: '24h' };
+
+    await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+    await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+    const blocked = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send(body);
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+  });
+
+  it('admin-probe bucket fires for non-admin requests to admin routes', async () => {
+    const user = makeRegularUser();
+    const token = issueAccessToken(user, ['urls:read']);
+    const res = await request(app)
+      .get('/admin/urls')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.6.1');
+    // 403 because user lacks admin role, but rate-limit headers should be present
+    expect(res.status).toBe(403);
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+  });
+
+  it('admin-probe bucket is skipped for actual admin requests', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['urls:read']);
+    const res = await request(app)
+      .get('/admin/urls')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.200.6.2');
+    expect(res.status).toBe(200);
+    expect(res.headers['ratelimit']).toBeUndefined();
+    expect(res.headers['ratelimit-policy']).toBeUndefined();
+  });
+
+  it('privileged user gets higher quota than regular user (higher max in policy header)', async () => {
+    const user = makeRegularUser();
+    const userToken = issueAccessToken(user, ['shorten:create']);
+    const userRes = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${userToken}`)
+      .set('X-Forwarded-For', '10.200.7.1')
+      .send({ url: 'https://example.com', ttl: '24h' });
+    expect(userRes.status).toBe(201);
+
+    const privileged = makePrivilegedUser();
+    const privToken = issueAccessToken(privileged, ['shorten:create']);
+    const privRes = await request(app)
+      .post('/api/shorten')
+      .set('Authorization', `Bearer ${privToken}`)
+      .set('X-Forwarded-For', '10.200.7.2')
+      .send({ url: 'https://example.com', ttl: '24h' });
+    expect(privRes.status).toBe(201);
+
+    // Both get headers; privileged limit > user limit.
+    const userPolicy: string = userRes.headers['ratelimit-policy'] as string;
+    const privPolicy: string = privRes.headers['ratelimit-policy'] as string;
+    expect(userPolicy).toBeDefined();
+    expect(privPolicy).toBeDefined();
+
+    // Extract the limit numbers from the policy header (e.g. `"shorten-user"; q=60; w=900; pk=:...:`)
+    const extractLimit = (policy: string): number => {
+      const match = /q=(\d+)/.exec(policy.trim());
+      return match ? parseInt(match[1], 10) : 0;
+    };
+    expect(extractLimit(privPolicy)).toBeGreaterThan(extractLimit(userPolicy));
   });
 });

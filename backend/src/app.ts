@@ -3,13 +3,24 @@ import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
 import passport from 'passport';
-import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import swaggerUi from 'swagger-ui-express';
 import pool from './db';
 import { User } from './models/user';
 import { lookupAccessTokenWithUser } from './oauth/tokens';
 import baseSpec from './openapi';
+import {
+  csrfBootstrapLimiter,
+  authReadLimiter,
+  authFlowLimiter,
+  accountLimiter,
+  shortenLimiter,
+  openapiLimiter,
+  adminProbeLimiter,
+  oauthTokenLimiter,
+  oauthAppsLimiter,
+  oauthAuthorizeLimiter,
+} from './rate-limit';
 
 import './passport';
 
@@ -19,19 +30,6 @@ import adminRoutes from './routes/admin';
 import oauthRoutes from './routes/oauth';
 import mergeRoutes from './routes/merge';
 import { isAllowedFrontendOrigin, publicApiOrigin } from './config';
-
-const ANON_SESSION_WINDOW_MS = 60 * 1000;
-const ANON_SESSION_MAX = 1;
-const ANON_IP_GUARD_WINDOW_MS = 60 * 1000;
-const ANON_IP_GUARD_MAX = 10;
-const GLOBAL_API_WINDOW_MS = 15 * 60 * 1000;
-const GLOBAL_API_MAX = 300;
-const AUTH_WINDOW_MS = 15 * 60 * 1000;
-const AUTH_MAX = 30;
-const AUTH_READ_WINDOW_MS = 60 * 1000;
-const AUTH_READ_MAX = 120;
-const ADMIN_WINDOW_MS = 60 * 1000;
-const ADMIN_MAX = 60;
 
 const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -105,17 +103,6 @@ app.use(session(sessionOptions));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Global rate limiter applied to all routes — runs before any auth or DB lookups.
-const globalRateLimiter = rateLimit({
-  windowMs: GLOBAL_API_WINDOW_MS,
-  max: GLOBAL_API_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests. Please try again later.' },
-});
-
-app.use(globalRateLimiter);
-
 // Early middleware: resolve OAuth Bearer tokens before CSRF check so that
 // CSRF bypass and rate limit skip use a validated user, not raw headers.
 async function earlyBearerAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -162,8 +149,8 @@ async function earlyBearerAuthMiddleware(req: Request, res: Response, next: Next
 
 app.use(earlyBearerAuthMiddleware);
 
-// Defined before the /auth limiter mounts, so this endpoint only uses the global limiter.
-app.get('/auth/csrf-token', (req: Request, res: Response) => {
+// Defined before any auth router — uses only the csrf-bootstrap bucket.
+app.get('/auth/csrf-token', csrfBootstrapLimiter, (req: Request, res: Response) => {
   if (!req.session.csrfToken) {
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
   }
@@ -233,66 +220,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.status(403).json({ error: 'CSRF validation failed.' });
 });
 
-// Anonymous per-session limiter: each anonymous browser session gets its own bucket.
-const anonymousSessionRateLimiter = rateLimit({
-  windowMs: ANON_SESSION_WINDOW_MS,
-  max: ANON_SESSION_MAX,
-  skip: (req: Request) => req.isAuthenticated() || !!req.user,
-  keyGenerator: (req: Request) => {
-    if (req.sessionID) {
-      return `anon-session:${req.sessionID}`;
-    }
-
-    // Fallback in case a session id is unavailable.
-    return `anon-ip-fallback:${req.ip}`;
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests. Please log in or wait before trying again.' },
-});
-
-// Anonymous IP guardrail: caps aggregate anonymous traffic per source IP.
-const anonymousIpGuardRateLimiter = rateLimit({
-  windowMs: ANON_IP_GUARD_WINDOW_MS,
-  max: ANON_IP_GUARD_MAX,
-  skip: (req: Request) => req.isAuthenticated() || !!req.user,
-  keyGenerator: (req: Request) => `anon-ip:${req.ip}`,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many anonymous requests from this IP. Please log in or wait before trying again.' },
-});
-
-const authRateLimiter = rateLimit({
-  windowMs: AUTH_WINDOW_MS,
-  max: AUTH_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many authentication requests. Please try again later.' },
-  skip: (req: Request) =>
-    process.env.E2E_TEST_MODE === 'true' ||
-    req.path === '/me' ||
-    req.path === '/providers',
-});
-
-// Relaxed limiter mounted by path on /auth/me and /auth/providers.
-// Because it is path-based, any method on those paths inherits it.
-const authReadRateLimiter = rateLimit({
-  windowMs: AUTH_READ_WINDOW_MS,
-  max: AUTH_READ_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests. Please try again later.' },
-  skip: () => process.env.E2E_TEST_MODE === 'true',
-});
-
-const adminRateLimiter = rateLimit({
-  windowMs: ADMIN_WINDOW_MS,
-  max: ADMIN_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many admin requests. Please try again later.' },
-});
-
 const { servers: _servers, ...baseSpecWithoutServers } = baseSpec;
 const swaggerDocument = {
   ...baseSpecWithoutServers,
@@ -304,16 +231,52 @@ const swaggerDocument = {
   ],
 };
 
-app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDocument));
+// Per-route rate limiters (applied before routers, method-specific where needed).
 
-app.use('/api/shorten', anonymousSessionRateLimiter);
-app.use('/api/shorten', anonymousIpGuardRateLimiter);
-// These paths get the relaxed limiter; all other /auth routes use the stricter one.
-app.use('/auth/me', authReadRateLimiter);
-app.use('/auth/providers', authReadRateLimiter);
-app.use('/auth', authRateLimiter);
-app.use('/admin', adminRateLimiter);
+// GET /auth/me, GET /auth/providers
+app.get('/auth/me', authReadLimiter);
+app.get('/auth/providers', authReadLimiter);
 
+// GET /auth/:provider, GET /auth/:provider/callback, POST /auth/apple/callback
+app.get('/auth/:provider', authFlowLimiter);
+app.get('/auth/:provider/callback', authFlowLimiter);
+app.post('/auth/apple/callback', authFlowLimiter);
+
+// GET /auth/:provider/link — authenticated only (anon has no bucket)
+app.get('/auth/:provider/link', accountLimiter);
+
+// Account-management routes (session-auth only, authenticated)
+app.get('/auth/identities', accountLimiter);
+app.delete('/auth/identities/:provider', accountLimiter);
+app.post('/auth/logout', accountLimiter);
+app.delete('/auth/me', accountLimiter);
+app.post('/auth/merge/initiate', accountLimiter);
+app.post('/auth/merge/confirm', accountLimiter);
+
+// POST /api/shorten
+app.post('/api/shorten', shortenLimiter);
+
+// GET /api/openapi.json
+app.get('/api/openapi.json', openapiLimiter, (req: Request, res: Response) => res.json(swaggerDocument));
+
+// Admin-only routes — non-admin callers hit the admin-probe bucket
+app.get('/api/urls', adminProbeLimiter);
+app.delete('/api/urls/:id', adminProbeLimiter);
+app.get('/admin/urls', adminProbeLimiter);
+app.delete('/admin/urls/:id', adminProbeLimiter);
+app.get('/admin/users', adminProbeLimiter);
+app.patch('/admin/users/:id/role', adminProbeLimiter);
+
+// OAuth endpoints
+app.get('/oauth/authorize', oauthAuthorizeLimiter);
+app.post('/oauth/authorize/consent', oauthAuthorizeLimiter);
+app.post('/oauth/token', oauthTokenLimiter);
+app.post('/oauth/revoke', oauthTokenLimiter);
+app.get('/oauth/apps', oauthAppsLimiter);
+app.post('/oauth/apps', oauthAppsLimiter);
+app.delete('/oauth/apps/:clientId', oauthAppsLimiter);
+
+// Route handlers
 app.use('/auth', authRoutes);
 app.use('/auth/merge', mergeRoutes);
 app.get('/s/:code', redirectShortCode);
@@ -324,7 +287,6 @@ app.use('/oauth', oauthRoutes);
 if (process.env.E2E_TEST_MODE === 'true') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const e2eRoutes = require('./routes/e2e').default as express.Router;
-  // Mount on /e2e (not /auth) to avoid the /auth rate limiter in tests.
   app.use('/e2e', e2eRoutes);
   console.warn('[E2E] Test-only /e2e routes are active — do not use in production.');
 }
