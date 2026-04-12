@@ -238,14 +238,9 @@ app.get('/auth/me', authReadLimiter);
 app.get('/auth/providers', authReadLimiter);
 
 // GET /auth/:provider, GET /auth/:provider/callback, POST /auth/apple/callback
-// Guard against the wildcard param also matching fixed paths that have their own
-// dedicated limiters (me, providers, identities).  Those paths are already handled
-// above and must not also consume the auth-flow bucket.
-const AUTH_NON_PROVIDER_PATHS = new Set(['me', 'providers', 'identities']);
-app.get('/auth/:provider', (req: Request, res: Response, next: NextFunction) => {
-  if (AUTH_NON_PROVIDER_PATHS.has(req.params.provider as string)) return next();
-  authFlowLimiter(req, res, next);
-});
+// authFlowLimiter's skip function handles the exclusion of fixed paths (me, providers,
+// identities) that are registered before this wildcard and have their own buckets.
+app.get('/auth/:provider', authFlowLimiter);
 app.get('/auth/:provider/callback', authFlowLimiter);
 app.post('/auth/apple/callback', authFlowLimiter);
 

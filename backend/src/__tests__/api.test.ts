@@ -205,6 +205,12 @@ jest.mock('../db', () => {
         return { rows: db.oauthClients.filter(c => c.client_id === clientId && c.revoked_at === null) };
       }
 
+      if (s.startsWith('select 1 from oauth_clients where client_id')) {
+        const [clientId] = params as [string];
+        const rows = db.oauthClients.filter(c => c.client_id === clientId && c.revoked_at === null);
+        return { rows: rows.length > 0 ? [{ 1: 1 }] : [] };
+      }
+
       if (s.startsWith('insert into oauth_clients')) {
         const [userId, name, clientId, clientSecret, isPublic, redirectUris, scopes] =
           params as [number | null, string, string, string | null, boolean, string[], string[]];

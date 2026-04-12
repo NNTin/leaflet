@@ -108,7 +108,7 @@ function userId(req: Request): string {
  */
 export function createRoleLimiter(
   policy: string,
-  keyGenerator: (req: Request, res: Response) => string | Promise<string>,
+  keyGenerator: (req: Request) => string | Promise<string>,
   skip: (req: Request) => boolean,
 ): RequestHandler {
   const cfg = BUCKET_CONFIGS[policy];
@@ -289,11 +289,21 @@ export const authReadLimiter: RequestHandler = composeLimiters(
 
 // GET /auth/:provider, GET /auth/:provider/callback, POST /auth/apple/callback
 // GET /oauth/authorize (anonymous path)
+//
+// The skip function also excludes the fixed auth paths (me, providers, identities)
+// that are registered before this wildcard route and have their own dedicated
+// buckets.  This prevents the auth-flow bucket from double-firing on those paths
+// when Express dispatches the wildcard handler after the specific one.
+const AUTH_NON_PROVIDER_PATHS = new Set(['me', 'providers', 'identities']);
 export const authFlowLimiter: RequestHandler = composeLimiters(
   createRoleLimiter(
     POLICY.AUTH_FLOW,
     (req) => req.ip ?? '0.0.0.0',
-    (req) => isAdmin(req) || process.env.E2E_TEST_MODE === 'true',
+    (req) => {
+      const provider = (req.params as Record<string, string | undefined>).provider;
+      if (provider !== undefined && AUTH_NON_PROVIDER_PATHS.has(provider)) return true;
+      return isAdmin(req) || process.env.E2E_TEST_MODE === 'true';
+    },
   ),
 );
 
@@ -378,20 +388,25 @@ export const oauthTokenLimiter: RequestHandler = composeLimiters(
         return `client:${req.oauthClientId}`;
       }
 
-      // For client-credentials grant, the client_id is passed in the request body.
-      // Validate it against the DB to prevent bucket-key rotation with fake client IDs.
+      // For body-based grants (authorization_code, client_credentials, etc.), the
+      // client_id is passed in the request body for public clients.  Validate it
+      // against the DB to prevent bucket-key rotation with fake client IDs.
       const rawClientId = typeof req.body?.client_id === 'string' ? (req.body.client_id as string) : undefined;
       if (rawClientId) {
         try {
           const result = await pool.query(
-            'SELECT * FROM oauth_clients WHERE client_id = $1',
+            'SELECT 1 FROM oauth_clients WHERE client_id = $1',
             [rawClientId],
           );
           if (result.rows.length > 0) {
             return `client:${rawClientId}`;
           }
-        } catch {
-          // DB error — fall back to IP
+        } catch (err) {
+          // DB error during client validation — fall back to IP and log for diagnostics.
+          console.error(
+            `[rate-limit] oauthTokenLimiter: DB client_id validation failed for client="${rawClientId}" ip="${req.ip ?? 'unknown'}"`,
+            err,
+          );
         }
       }
 
