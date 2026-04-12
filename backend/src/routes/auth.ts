@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import passport from 'passport';
+import pool from '../db';
 import { User } from '../models/user';
 import { ProviderName, listIdentitiesForUser, deleteIdentity, countIdentitiesForUser } from '../models/identity';
 import { addAuthFailureParam, defaultFrontendUrl, resolveOAuthReturnTo } from '../config';
@@ -162,6 +163,49 @@ router.post('/logout', (req: Request, res: Response, next: NextFunction) => {
       res.json({ message: 'Logged out successfully' });
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /auth/me  –  Delete the authenticated user's account (session auth only)
+// ---------------------------------------------------------------------------
+
+router.delete('/me', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  // OAuth bearer tokens must not be able to delete an account — this is a
+  // browser-session-only destructive action. The CSRF middleware already
+  // skips CSRF for OAuth requests, so an additional check here is required.
+  if (req.oauthAuthenticated) {
+    res.status(403).json({
+      success: false,
+      error: 'Account deletion requires a browser session.',
+      hint: 'Log in via a browser session to delete your account.',
+    });
+    return;
+  }
+
+  try {
+    const user = req.user as User;
+
+    // Delete the user row; ON DELETE CASCADE / SET NULL handles child rows.
+    await pool.query('DELETE FROM users WHERE id = $1', [user.id]);
+
+    // Destroy the session and clear the cookie so the client is logged out.
+    req.logout((logoutErr) => {
+      if (logoutErr) {
+        next(logoutErr);
+        return;
+      }
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) {
+          next(destroyErr);
+          return;
+        }
+        res.clearCookie('connect.sid');
+        res.json({ success: true, message: 'Account deleted successfully.' });
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import Navbar from '../components/Navbar'
 import api from '../api'
-import { authUrl } from '../urls'
+import { useSession } from '../session'
 import styles from './HomePage.module.css'
 
 interface TtlOption {
@@ -19,11 +18,6 @@ const TTL_OPTIONS: TtlOption[] = [
 
 const ADMIN_TTL: TtlOption = { label: 'Never expire', value: 'never' }
 
-interface User {
-  username: string;
-  role: string;
-}
-
 interface ShortenResponse {
   shortCode: string;
   shortUrl: string;
@@ -32,18 +26,12 @@ interface ShortenResponse {
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { user } = useSession()
   const [url, setUrl] = useState('')
   const [ttl, setTtl] = useState('24h')
   const [alias, setAlias] = useState('')
-  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    axios.get<User | null>(authUrl('/me'), { withCredentials: true })
-      .then(res => setUser(res.data))
-      .catch(() => setUser(null))
-  }, [])
 
   const ttlOptions = user?.role === 'admin'
     ? [...TTL_OPTIONS, ADMIN_TTL]
@@ -90,101 +78,97 @@ export default function HomePage() {
   }
 
   return (
-    <div className={styles.page}>
-      <Navbar user={user} />
+    <main className={styles.main}>
+      <div className={styles.hero}>
+        <div className={styles.heroIcon}>🌱💌</div>
+        <h1 className={styles.heroTitle}>Leaflet</h1>
+        <p className={styles.heroTagline}>
+          Privacy-first URL shortener. No tracking, no ads.
+        </p>
+      </div>
 
-      <main className={styles.main}>
-        <div className={styles.hero}>
-          <div className={styles.heroIcon}>🌱📍</div>
-          <h1 className={styles.heroTitle}>Leaflet</h1>
-          <p className={styles.heroTagline}>
-            Privacy-first URL shortener. No tracking, no ads.
-          </p>
-        </div>
+      <div className={`card ${styles.formCard}`}>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="url-input">
+              Paste your long URL
+            </label>
+            <input
+              id="url-input"
+              type="url"
+              className={styles.input}
+              placeholder="https://example.com/very/long/url..."
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
 
-        <div className={`card ${styles.formCard}`}>
-          <form onSubmit={handleSubmit} noValidate>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="url-input">
-                Paste your long URL
-              </label>
-              <input
-                id="url-input"
-                type="url"
-                className={styles.input}
-                placeholder="https://example.com/very/long/url..."
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-                autoFocus
-                required
-              />
-            </div>
-
-            <div className={styles.ttlRow}>
-              <span className={styles.ttlLabel}>Link expires after:</span>
-              <div className={styles.ttlOptions}>
-                {ttlOptions.map(opt => (
-                  <label key={opt.value} className={styles.ttlOption}>
-                    <input
-                      type="radio"
-                      name="ttl"
-                      value={opt.value}
-                      checked={ttl === opt.value}
-                      onChange={() => setTtl(opt.value)}
-                    />
-                    <span className={styles.ttlText}>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {canAlias && (
-              <div className={styles.field}>
-                <label className={styles.label} htmlFor="alias-input">
-                  Custom alias <span className={styles.optional}>(optional)</span>
-                </label>
-                <div className={styles.aliasWrapper}>
-                  <span className={styles.aliasPrefix}>/s/</span>
+          <div className={styles.ttlRow}>
+            <span className={styles.ttlLabel}>Link expires after:</span>
+            <div className={styles.ttlOptions}>
+              {ttlOptions.map(opt => (
+                <label key={opt.value} className={styles.ttlOption}>
                   <input
-                    id="alias-input"
-                    type="text"
-                    className={styles.aliasInput}
-                    placeholder="my-custom-link"
-                    value={alias}
-                    onChange={e => setAlias(e.target.value.replace(/[^a-zA-Z0-9-_]/g, ''))}
-                    maxLength={50}
+                    type="radio"
+                    name="ttl"
+                    value={opt.value}
+                    checked={ttl === opt.value}
+                    onChange={() => setTtl(opt.value)}
                   />
-                </div>
+                  <span className={styles.ttlText}>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {canAlias && (
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="alias-input">
+                Custom alias <span className={styles.optional}>(optional)</span>
+              </label>
+              <div className={styles.aliasWrapper}>
+                <span className={styles.aliasPrefix}>/s/</span>
+                <input
+                  id="alias-input"
+                  type="text"
+                  className={styles.aliasInput}
+                  placeholder="my-custom-link"
+                  value={alias}
+                  onChange={e => setAlias(e.target.value.replace(/[^a-zA-Z0-9-_]/g, ''))}
+                  maxLength={50}
+                />
               </div>
-            )}
+            </div>
+          )}
 
-            {error && <div className="error-msg">{error}</div>}
+          {error && <div className="error-msg">{error}</div>}
 
-            <button
-              type="submit"
-              className={`btn btn-primary ${styles.submitBtn}`}
-              disabled={loading}
-            >
-              {loading ? 'Shortening…' : '✂️ Shorten URL'}
-            </button>
-          </form>
+          <button
+            type="submit"
+            className={`btn btn-primary ${styles.submitBtn}`}
+            disabled={loading}
+          >
+            {loading ? 'Shortening…' : '✂️ Shorten URL'}
+          </button>
+        </form>
+      </div>
+
+      <div className={styles.features}>
+        <div className={styles.feature}>
+          <span className={styles.featureIcon}>🔒</span>
+          <span>No personal data collected</span>
         </div>
-
-        <div className={styles.features}>
-          <div className={styles.feature}>
-            <span className={styles.featureIcon}>🔒</span>
-            <span>No personal data collected</span>
-          </div>
-          <div className={styles.feature}>
-            <span className={styles.featureIcon}>⏱️</span>
-            <span>Auto-expiring links</span>
-          </div>
-          <div className={styles.feature}>
-            <span className={styles.featureIcon}>📦</span>
-            <span>Open source</span>
-          </div>
+        <div className={styles.feature}>
+          <span className={styles.featureIcon}>⏱️</span>
+          <span>Auto-expiring links</span>
         </div>
-      </main>
-    </div>
+        <div className={styles.feature}>
+          <span className={styles.featureIcon}>📦</span>
+          <span>Open source</span>
+        </div>
+      </div>
+    </main>
   )
 }

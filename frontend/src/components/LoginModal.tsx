@@ -106,6 +106,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
             <ul className={styles.providerList} role="list">
               {providers.map(({ name, label }) => {
                 const meta = PROVIDER_META_MAP[name]
+                const IconComponent = meta?.icon
                 return (
                   <li key={name}>
                     <a
@@ -113,7 +114,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
                       className={styles.providerBtn}
                     >
                       <span className={styles.providerIcon} aria-hidden="true">
-                        {meta?.icon ?? '🔑'}
+                        {IconComponent ? <IconComponent size={18} aria-hidden={true} /> : '🔑'}
                       </span>
                       <span>Continue with {label}</span>
                     </a>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import Navbar from '../components/Navbar'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { csrfHeaders } from '../api'
-import { adminUrl, authUrl, shortUrl } from '../urls'
+import { adminUrl, shortUrl } from '../urls'
+import { useSession } from '../session'
 import styles from './AdminPage.module.css'
 
 const adminApi = axios.create({ baseURL: adminUrl(''), withCredentials: true })
@@ -25,8 +25,7 @@ interface LinkItem {
 }
 
 export default function AdminPage() {
-  const [user, setUser] = useState<User | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
+  const { user, loading } = useSession()
   const [tab, setTab] = useState('links')
 
   const [links, setLinks] = useState<LinkItem[]>([])
@@ -39,13 +38,6 @@ export default function AdminPage() {
 
   const [actionMsg, setActionMsg] = useState('')
   const [actionError, setActionError] = useState('')
-
-  useEffect(() => {
-    axios.get<User | null>(authUrl('/me'), { withCredentials: true })
-      .then(res => setUser(res.data))
-      .catch(() => setUser(null))
-      .finally(() => setAuthLoading(false))
-  }, [])
 
   useEffect(() => {
     if (user?.role !== 'admin') return
@@ -108,52 +100,52 @@ export default function AdminPage() {
     }
   }
 
-  if (authLoading) return <LoadingSpinner fullPage />
+  if (loading) {
+    return (
+      <main className={styles.main}>
+        <LoadingSpinner />
+      </main>
+    )
+  }
 
   if (!user || user.role !== 'admin') {
     return (
-      <div className={styles.page}>
-        <Navbar user={user} />
-        <main className={styles.main}>
-          <div className={`card ${styles.forbiddenCard}`}>
-            <div className={styles.forbiddenIcon}>🚫</div>
-            <h1 className={styles.forbiddenTitle}>Access Denied</h1>
-            <p className={styles.forbiddenMsg}>
-              You must be an administrator to view this page.
-            </p>
-          </div>
-        </main>
-      </div>
+      <main className={styles.main}>
+        <div className={`card ${styles.forbiddenCard}`}>
+          <div className={styles.forbiddenIcon}>🚫</div>
+          <h1 className={styles.forbiddenTitle}>Access Denied</h1>
+          <p className={styles.forbiddenMsg}>
+            You must be an administrator to view this page.
+          </p>
+        </div>
+      </main>
     )
   }
 
   return (
-    <div className={styles.page}>
-      <Navbar user={user} />
+    <div className={`page-container-wide ${styles.content}`}>
+      <h1 className={styles.heading}>Admin Dashboard</h1>
 
-      <div className={`page-container-wide ${styles.content}`}>
-        <h1 className={styles.heading}>Admin Dashboard</h1>
+      <div className={styles.tabs}>
+        <button
+          className={`${styles.tab} ${tab === 'links' ? styles.tabActive : ''}`}
+          onClick={() => setTab('links')}
+        >
+          🔗 Links
+        </button>
+        <button
+          className={`${styles.tab} ${tab === 'users' ? styles.tabActive : ''}`}
+          onClick={() => setTab('users')}
+        >
+          👥 Users
+        </button>
+      </div>
 
-        <div className={styles.tabs}>
-          <button
-            className={`${styles.tab} ${tab === 'links' ? styles.tabActive : ''}`}
-            onClick={() => setTab('links')}
-          >
-            🔗 Links
-          </button>
-          <button
-            className={`${styles.tab} ${tab === 'users' ? styles.tabActive : ''}`}
-            onClick={() => setTab('users')}
-          >
-            👥 Users
-          </button>
+      {(actionMsg || actionError) && (
+        <div className={actionError ? 'error-msg' : 'success-msg'} style={{ marginBottom: '1rem' }}>
+          {actionMsg || actionError}
         </div>
-
-        {(actionMsg || actionError) && (
-          <div className={actionError ? 'error-msg' : 'success-msg'} style={{ marginBottom: '1rem' }}>
-            {actionMsg || actionError}
-          </div>
-        )}
+      )}
 
         {tab === 'links' && (
           <div className={`card ${styles.tableCard}`}>
@@ -286,7 +278,6 @@ export default function AdminPage() {
             )}
           </div>
         )}
-      </div>
     </div>
   )
 }

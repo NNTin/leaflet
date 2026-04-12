@@ -1,17 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Navigate } from 'react-router-dom'
 import axios from 'axios'
-import Navbar from '../components/Navbar'
 import { authUrl } from '../urls'
 import { csrfHeaders } from '../api'
-import { PROVIDER_META, PROVIDER_META_MAP } from '../providers'
+import { providersCache, MISS } from '../authCache'
+import { PROVIDER_META_MAP } from '../providers'
+import { useSession } from '../session'
 import styles from './SettingsPage.module.css'
-
-interface User {
-  id: number;
-  username: string;
-  role: string;
-}
 
 interface Identity {
   id: number;
@@ -70,32 +65,55 @@ function clearLinkConflictSearchParams() {
 }
 
 export default function SettingsPage() {
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const { user, loading, clearSession } = useSession()
   const [identities, setIdentities] = useState<Identity[]>([])
   const [loadingIdentities, setLoadingIdentities] = useState(false)
-  const [availableProviders, setAvailableProviders] = useState<string[]>([])
+  const [availableProviders, setAvailableProviders] = useState<string[] | null>(null)
+  const [providersError, setProvidersError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState<string | null>(null)
   const [linkConflict, setLinkConflict] = useState<LinkConflict | null>(() => readLinkConflict())
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const deleteInputRef = useRef<HTMLInputElement>(null)
 
-  // Fetch current user.
+  // Close delete modal on Escape key.
   useEffect(() => {
-    axios
-      .get<User | null>(authUrl('/me'), { withCredentials: true })
-      .then((res) => setUser(res.data))
-      .catch(() => setUser(null))
-  }, [])
+    if (!showDeleteModal) return
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !deleting) closeDeleteModal()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [showDeleteModal, deleting])
 
-  // Fetch which providers are configured on this server (only when authenticated).
+  // Fetch which providers are configured on this server (with cache, proper error handling).
   useEffect(() => {
     if (!user) return
+
+    const cached = providersCache.get()
+    if (cached !== MISS) {
+      setAvailableProviders(cached)
+      return
+    }
+
     axios
       .get<{ name: string }[]>(authUrl('/providers'), { withCredentials: true })
-      .then((res) => setAvailableProviders(res.data.map((p) => p.name)))
-      .catch(() => {
-        // Fall back to showing all known providers so the page isn't empty.
-        setAvailableProviders(PROVIDER_META.map((p) => p.name))
+      .then((res) => {
+        const names = res.data.map((p) => p.name)
+        providersCache.set(names)
+        setAvailableProviders(names)
+        setProvidersError(null)
+      })
+      .catch((err) => {
+        if (axios.isAxiosError(err) && err.response?.status === 429) {
+          setProvidersError('You are being rate limited. Please try again shortly.')
+        } else {
+          setProvidersError('Could not load connected account options. Please try again.')
+        }
+        setAvailableProviders(null)
       })
   }, [user])
 
@@ -221,16 +239,45 @@ export default function SettingsPage() {
     window.location.href = authUrl(`/${provider}/link`, window.location.href)
   }
 
+  // Account deletion handlers.
+  function openDeleteModal() {
+    setDeleteConfirm('')
+    setShowDeleteModal(true)
+    setTimeout(() => deleteInputRef.current?.focus(), 50)
+  }
+
+  function closeDeleteModal() {
+    setShowDeleteModal(false)
+    setDeleteConfirm('')
+  }
+
+  async function handleDeleteAccount() {
+    if (deleteConfirm !== 'DELETE' || deleting) return
+    setDeleting(true)
+    try {
+      const headers = await csrfHeaders()
+      await axios.delete(authUrl('/me'), { withCredentials: true, headers })
+      clearSession()
+      window.location.href = '/'
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const msg = (err.response?.data as { error?: string })?.error
+        setError(msg ?? 'Failed to delete account.')
+      } else {
+        setError('Unexpected error.')
+      }
+      setDeleting(false)
+      setShowDeleteModal(false)
+    }
+  }
+
   const connectedProviders = new Set(identities.map((i) => i.provider))
 
-  if (user === undefined) {
+  if (loading) {
     return (
-      <div className={styles.page}>
-        <Navbar user={null} />
-        <main className={styles.main}>
-          <div className={styles.loading}>Loading…</div>
-        </main>
-      </div>
+      <main className={styles.main}>
+        <div className={styles.loading}>Loading…</div>
+      </main>
     )
   }
 
@@ -240,10 +287,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <Navbar user={user} />
-      <main className={styles.main}>
-        <div className={styles.content}>
+    <main className={styles.main}>
+      <div className={styles.content}>
           <h1 className={styles.heading}>Settings</h1>
           <p className={styles.subheading}>Manage your account and connected login methods.</p>
 
@@ -288,13 +333,17 @@ export default function SettingsPage() {
               </p>
             )}
 
+            {providersError && (
+              <div className={styles.error}>{providersError}</div>
+            )}
+
             {loadingIdentities ? (
               <div className={styles.loading}>Loading…</div>
             ) : (
-              availableProviders.map((name) => {
+              availableProviders !== null && availableProviders.map((name) => {
                 const meta = PROVIDER_META_MAP[name]
                 if (!meta) return null
-                const { label, icon } = meta
+                const { label, icon: IconComponent } = meta
                 const identity = identities.find((i) => i.provider === name)
                 const isConnected = connectedProviders.has(name)
                 const isLastIdentity = identities.length <= 1
@@ -302,7 +351,9 @@ export default function SettingsPage() {
                 return (
                   <div key={name} className={styles.providerRow}>
                     <div className={styles.providerInfo}>
-                      <span className={styles.providerIcon}>{icon}</span>
+                      <span className={styles.providerIcon} aria-hidden="true">
+                        <IconComponent size={20} aria-hidden={true} />
+                      </span>
                       <div>
                         <div className={styles.providerName}>{label}</div>
                         {isConnected && identity ? (
@@ -343,8 +394,70 @@ export default function SettingsPage() {
               })
             )}
           </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <span>⚠️</span>
+              <span className={styles.sectionTitle}>Danger Zone</span>
+            </div>
+            <p className={styles.dangerDescription}>
+              Permanently delete your account and all associated data. This action cannot be undone.
+            </p>
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={openDeleteModal}
+              disabled={actionPending !== null}
+            >
+              Delete Account
+            </button>
+          </section>
+      </div>
+
+      {showDeleteModal && (
+        <div
+          className={styles.modalBackdrop}
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleting) closeDeleteModal()
+          }}
+        >
+          <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+            <h2 id="delete-modal-title" className={styles.modalTitle}>Delete Account</h2>
+            <p className={styles.modalBody}>
+              This will permanently delete your account, all connected identities, and any associated data.
+              <strong> This action cannot be undone.</strong>
+            </p>
+            <p className={styles.modalBody}>
+              Type <strong>DELETE</strong> to confirm:
+            </p>
+            <input
+              ref={deleteInputRef}
+              type="text"
+              className={styles.deleteInput}
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder="DELETE"
+              aria-label="Type DELETE to confirm account deletion"
+            />
+            <div className={styles.modalActions}>
+              <button
+                className="btn btn-danger"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirm !== 'DELETE' || deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete my account'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
-      </main>
-    </div>
+      )}
+    </main>
   )
 }
