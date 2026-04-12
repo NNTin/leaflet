@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import { body, validationResult } from 'express-validator';
 import pool from '../db';
 import { generateShortCode } from '../shortcode';
@@ -15,6 +15,7 @@ import {
 } from '../shorten-policy';
 
 const router = express.Router();
+export type ShortenAuthMode = 'session' | 'public';
 
 interface UrlRow {
   id: number;
@@ -38,83 +39,45 @@ function toUrlDto(row: UrlRow) {
   };
 }
 
-export async function redirectShortCode(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const { code } = req.params;
-    const result = await pool.query(
-      `SELECT original_url FROM urls
-       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
-      [code]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Short URL not found or has expired.' });
-      return;
-    }
-
-    res.redirect(302, result.rows[0].original_url as string);
-  } catch (err) {
-    next(err);
+function getShortenCallerUser(req: Request, mode: ShortenAuthMode): User | null {
+  if (mode === 'public' && req.oauthAuthenticated !== true) {
+    return null;
   }
+
+  return (req.user as User) ?? null;
 }
 
-/**
- * Handler for canonical human-facing short links (GET /s/:code).
- *
- * Active links: 302 redirect to the original URL (same as the API handler).
- * Missing/expired links: browser requests (Accept: text/html) are redirected
- *   to the frontend expired page so users see the branded experience.
- *   Machine callers (API/JSON) receive a 404 JSON response.
- */
-export async function humanRedirectShortCode(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const { code } = req.params;
-    const result = await pool.query(
-      `SELECT original_url FROM urls
-       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
-      [code]
-    );
-
-    if (result.rows.length === 0) {
-      const acceptHeader = req.headers['accept'] ?? '';
-      if (acceptHeader.includes('text/html')) {
-        const expiredUrl = `${defaultFrontendUrl.replace(/\/+$/, '')}/expired`;
-        res.redirect(302, expiredUrl);
-        return;
-      }
-      res.status(404).json({ error: 'Short URL not found or has expired.' });
-      return;
-    }
-
-    res.redirect(302, result.rows[0].original_url as string);
-  } catch (err) {
-    next(err);
-  }
+function isOAuthCaller(req: Request, mode: ShortenAuthMode): boolean {
+  return mode === 'public' ? req.oauthAuthenticated === true : req.oauthAuthenticated === true;
 }
 
-router.get('/shorten/capabilities', optionalBearerAuth, (req: Request, res: Response) => {
-  const user = (req.user as User) ?? null;
-
-  res.json(getShortenCapabilities({
+function buildShortenCapabilities(req: Request, mode: ShortenAuthMode) {
+  const user = getShortenCallerUser(req, mode);
+  return getShortenCapabilities({
     user,
-    oauthAuthenticated: req.oauthAuthenticated === true,
+    oauthAuthenticated: isOAuthCaller(req, mode),
     oauthScopes: req.oauthScopes,
-  }));
-});
+  });
+}
 
-router.post(
-  '/shorten',
-  optionalBearerAuth,
-  [
-    body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
-    body('ttl').isIn(SHORTEN_TTL_VALUES).withMessage(`TTL must be one of: ${SHORTEN_TTL_VALUES.join(', ')}`),
-    body('alias')
-      .optional()
-      .matches(/^[a-zA-Z0-9-_]+$/)
-      .isLength({ min: 3, max: 50 })
-      .withMessage('Alias must be 3-50 characters (letters, numbers, hyphens, underscores)'),
-  ],
-  async (req: Request, res: Response, next: NextFunction) => {
+export const shortenValidators = [
+  body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
+  body('ttl').isIn(SHORTEN_TTL_VALUES).withMessage(`TTL must be one of: ${SHORTEN_TTL_VALUES.join(', ')}`),
+  body('alias')
+    .optional()
+    .matches(/^[a-zA-Z0-9-_]+$/)
+    .isLength({ min: 3, max: 50 })
+    .withMessage('Alias must be 3-50 characters (letters, numbers, hyphens, underscores)'),
+];
+
+export function createShortenCapabilitiesHandler(mode: ShortenAuthMode): RequestHandler {
+  return (req: Request, res: Response) => {
+    res.json(buildShortenCapabilities(req, mode));
+  };
+}
+
+export function createShortenHandler(mode: ShortenAuthMode): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -122,7 +85,7 @@ router.post(
       }
 
       const { url, ttl, alias } = req.body as { url: string; ttl: string; alias?: string };
-      const user = (req.user as User) ?? null;
+      const user = getShortenCallerUser(req, mode);
 
       if (!ensureScopeForOAuthRequest(req, res, 'shorten:create')) {
         return;
@@ -186,8 +149,66 @@ router.post(
     } catch (err) {
       next(err);
     }
+  };
+}
+
+export async function redirectShortCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { code } = req.params;
+    const result = await pool.query(
+      `SELECT original_url FROM urls
+       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Short URL not found or has expired.' });
+      return;
+    }
+
+    res.redirect(302, result.rows[0].original_url as string);
+  } catch (err) {
+    next(err);
   }
-);
+}
+
+/**
+ * Handler for canonical human-facing short links (GET /s/:code).
+ *
+ * Active links: 302 redirect to the original URL (same as the API handler).
+ * Missing/expired links: browser requests (Accept: text/html) are redirected
+ *   to the frontend expired page so users see the branded experience.
+ *   Machine callers (API/JSON) receive a 404 JSON response.
+ */
+export async function humanRedirectShortCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { code } = req.params;
+    const result = await pool.query(
+      `SELECT original_url FROM urls
+       WHERE short_code = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+      [code]
+    );
+
+    if (result.rows.length === 0) {
+      const acceptHeader = req.headers['accept'] ?? '';
+      if (acceptHeader.includes('text/html')) {
+        const expiredUrl = `${defaultFrontendUrl.replace(/\/+$/, '')}/expired`;
+        res.redirect(302, expiredUrl);
+        return;
+      }
+      res.status(404).json({ error: 'Short URL not found or has expired.' });
+      return;
+    }
+
+    res.redirect(302, result.rows[0].original_url as string);
+  } catch (err) {
+    next(err);
+  }
+}
+
+router.get('/shorten/capabilities', optionalBearerAuth, createShortenCapabilitiesHandler('session'));
+
+router.post('/shorten', optionalBearerAuth, shortenValidators, createShortenHandler('session'));
 
 router.get('/urls', requireAuth, requireScope('urls:read'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {

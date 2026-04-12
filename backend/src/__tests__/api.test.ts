@@ -1137,6 +1137,73 @@ describe('CSRF protection', () => {
   });
 });
 
+describe('CORS policy split', () => {
+  it('allows first-party origins on browser-backed auth endpoints and rejects hostile origins', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.99.5.5');
+
+    const allowed = await agent
+      .get('/auth/me')
+      .set('Origin', 'http://localhost:5173')
+      .set('X-Forwarded-For', '10.99.5.5');
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+
+    const blocked = await agent
+      .post('/auth/logout')
+      .set('Origin', 'https://evil.example')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.99.5.5');
+
+    expect(blocked.status).toBe(403);
+    expect(blocked.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('allows the public API from arbitrary origins without credentials or sessions', async () => {
+    const origin = 'https://thirdparty.example';
+
+    const capabilities = await request(app)
+      .get('/api/public/shorten/capabilities')
+      .set('Origin', origin)
+      .set('X-Forwarded-For', '10.99.5.6');
+
+    expect(capabilities.status).toBe(200);
+    expect(capabilities.headers['access-control-allow-origin']).toBe(origin);
+    expect(capabilities.headers['access-control-allow-credentials']).toBeUndefined();
+
+    const res = await request(app)
+      .post('/api/public/shorten')
+      .set('Origin', origin)
+      .set('X-Forwarded-For', '10.99.5.6')
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+    expect(res.headers['access-control-allow-origin']).toBe(origin);
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('does not add CORS behavior to redirect and auth navigation endpoints', async () => {
+    db.urls.push({ id: 1, short_code: 'cors-test', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
+
+    const short = await request(app)
+      .get('/s/cors-test')
+      .redirects(0)
+      .set('Origin', 'https://evil.example');
+
+    expect(short.status).toBe(302);
+    expect(short.headers['access-control-allow-origin']).toBeUndefined();
+
+    const auth = await request(app)
+      .get('/auth/github')
+      .set('Origin', 'https://evil.example');
+
+    expect(auth.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
 describe('GET /api/openapi.json', () => {
   it('returns 200 with valid OpenAPI spec', async () => {
     const res = await request(app).get('/api/openapi.json');
@@ -1166,6 +1233,8 @@ describe('GET /api/openapi.json', () => {
     const paths: string[] = Object.keys(res.body.paths as Record<string, unknown>);
     expect(paths).toContain('/auth/me');
     expect(paths).toContain('/api/shorten');
+    expect(paths).toContain('/api/public/shorten');
+    expect(paths).toContain('/api/public/shorten/capabilities');
     expect(paths).toContain('/api/urls');
     expect(paths).toContain('/admin/users');
     expect(paths).toContain('/admin/urls/{id}');

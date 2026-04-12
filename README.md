@@ -37,6 +37,16 @@ Leaflet includes an OAuth 2.0 Authorization Server so external tools can connect
 - Current identity provider support: GitHub
 - Planned identity provider support: Apple, Google, Microsoft, Discord
 
+## Leafspots Browser Integration
+
+Leafspots also integrates with Leaflet as a first-party browser client.
+
+- Login handoff page: `https://nntin.xyz/leaflet/login?returnTo=...`
+- Session/bootstrap endpoints: `GET /auth/me`, `GET /auth/csrf-token`, `POST /auth/logout`
+- Shortening endpoints: `GET /api/shorten/capabilities`, `POST /api/shorten`
+- Integration contract and `returnTo` requirements:
+  [backend/docs/leafspots-integration.md](backend/docs/leafspots-integration.md)
+
 ## API Documentation
 
 Developer API and endpoint documentation are available at:

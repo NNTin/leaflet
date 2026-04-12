@@ -61,10 +61,12 @@ The columns below describe the effective bucket for each caller type.
 | `GET /auth/me` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
 | `GET /auth/providers` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
 | `GET /api/shorten/capabilities` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
+| `GET /api/public/shorten/capabilities` | none | `auth-read-anonymous` | `auth-read-user` | `auth-read-privileged` | none |
 | `GET /auth/:provider`, `GET /auth/:provider/callback`, `POST /auth/apple/callback` | none | `auth-flow` | `auth-flow` | `auth-flow` | none |
 | `GET /auth/:provider/link` | none | none | `account-user` | `account-privileged` | none |
 | `GET /auth/identities`, `DELETE /auth/identities/:provider`, `POST /auth/logout`, `DELETE /auth/me`, `POST /auth/merge/initiate`, `POST /auth/merge/confirm` | none | none | `account-user` | `account-privileged` | none |
 | `POST /api/shorten` | `shorten-anonymous-session` | `shorten-anonymous-ip` | `shorten-user` | `shorten-privileged` | none |
+| `POST /api/public/shorten` | none | `shorten-anonymous-ip` | `shorten-user` | `shorten-privileged` | none |
 | `GET /api/openapi.json` | none | `openapi-anonymous` | `openapi-user` | `openapi-privileged` | none |
 | `GET /api/urls`, `DELETE /api/urls/:id`, `GET /admin/urls`, `DELETE /admin/urls/:id`, `GET /admin/users`, `PATCH /admin/users/:id/role` | none | `admin-probe` | `admin-probe` | `admin-probe` | none |
 | `GET /oauth/authorize`, `POST /oauth/authorize/consent` | none | `auth-flow` | `account-user` | `account-privileged` | none |
@@ -76,8 +78,12 @@ The columns below describe the effective bucket for each caller type.
 
 - Anonymous `POST /api/shorten` traffic consumes both anonymous buckets at the
   same time: one session bucket and one IP bucket.
+- Anonymous `POST /api/public/shorten` traffic consumes only the anonymous IP
+  bucket. It does not rely on browser sessions or CSRF tokens.
 - Authenticated `POST /api/shorten` traffic consumes only the role-appropriate
   user bucket.
+- Public `/api/public/*` browser API routes ignore browser session cookies and
+  use OAuth bearer auth only when a bearer token is explicitly provided.
 - Admin-only route families use the `admin-probe` bucket for any caller that is
   not an authenticated admin. Authenticated admins are fully skipped.
 - Public redirect endpoints do not have an application-level rate limit.
