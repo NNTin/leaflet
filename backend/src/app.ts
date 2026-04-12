@@ -162,6 +162,7 @@ async function earlyBearerAuthMiddleware(req: Request, res: Response, next: Next
 
 app.use(earlyBearerAuthMiddleware);
 
+// Defined before the /auth limiter mounts, so this endpoint only uses the global limiter.
 app.get('/auth/csrf-token', (req: Request, res: Response) => {
   if (!req.session.csrfToken) {
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
@@ -273,7 +274,8 @@ const authRateLimiter = rateLimit({
     req.path === '/providers',
 });
 
-// Lighter rate limiter for read-only, cacheable auth endpoints (/auth/me, /auth/providers).
+// Relaxed limiter mounted by path on /auth/me and /auth/providers.
+// Because it is path-based, any method on those paths inherits it.
 const authReadRateLimiter = rateLimit({
   windowMs: AUTH_READ_WINDOW_MS,
   max: AUTH_READ_MAX,
@@ -306,7 +308,7 @@ app.get('/api/openapi.json', (req: Request, res: Response) => res.json(swaggerDo
 
 app.use('/api/shorten', anonymousSessionRateLimiter);
 app.use('/api/shorten', anonymousIpGuardRateLimiter);
-// Lightweight read endpoints get a relaxed limiter; all other /auth routes use the stricter one.
+// These paths get the relaxed limiter; all other /auth routes use the stricter one.
 app.use('/auth/me', authReadRateLimiter);
 app.use('/auth/providers', authReadRateLimiter);
 app.use('/auth', authRateLimiter);
