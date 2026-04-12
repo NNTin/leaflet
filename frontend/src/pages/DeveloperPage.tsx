@@ -1,16 +1,42 @@
+import { useEffect, useState } from 'react'
 import SwaggerUI from 'swagger-ui-react'
 import 'swagger-ui-react/swagger-ui.css'
 import Navbar from '../components/Navbar'
+import { MISS, fetchMe, meCache, type AuthUser } from '../authCache'
 import { apiUrl } from '../urls'
 import styles from './DeveloperPage.module.css'
 
 export default function DeveloperPage() {
+  const cachedUser = meCache.get()
+  const [user, setUser] = useState<AuthUser | null>(cachedUser === MISS ? null : cachedUser)
+  const [authLoading, setAuthLoading] = useState(cachedUser === MISS)
   const apiBase = new URL(apiUrl(''), window.location.origin).toString().replace(/\/$/, '')
   const openApiUrl = apiUrl('/openapi.json')
 
+  useEffect(() => {
+    if (cachedUser !== MISS) return
+
+    let cancelled = false
+
+    void fetchMe()
+      .then((authUser) => {
+        if (!cancelled) setUser(authUser)
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null)
+      })
+      .finally(() => {
+        if (!cancelled) setAuthLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [cachedUser])
+
   return (
     <div className={styles.page}>
-      <Navbar />
+      <Navbar user={user} loading={authLoading} />
 
       <div className={`page-container-wide ${styles.content}`}>
         <header className={styles.header}>

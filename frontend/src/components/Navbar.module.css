@@ -66,6 +66,12 @@
   gap: 0.65rem;
 }
 
+.authPlaceholder {
+  width: 5.5rem;
+  height: 2rem;
+  flex-shrink: 0;
+}
+
 .username {
   font-size: 0.9rem;
   color: var(--muted);

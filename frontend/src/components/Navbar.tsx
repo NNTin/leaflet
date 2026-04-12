@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { csrfHeaders } from '../api'
+import { meCache, providersCache } from '../authCache'
 import { authUrl } from '../urls'
 import styles from './Navbar.module.css'
 import LoginModal from './LoginModal'
@@ -12,14 +13,18 @@ interface NavbarUser {
 
 interface NavbarProps {
   user?: NavbarUser | null;
+  loading?: boolean;
   onLogout?: () => void;
 }
 
-export default function Navbar({ user, onLogout }: NavbarProps) {
+export default function Navbar({ user, loading = false, onLogout }: NavbarProps) {
   const navigate = useNavigate()
   const [showLogin, setShowLogin] = useState(false)
 
   function handleLogout() {
+    meCache.clear()
+    providersCache.clear()
+
     if (onLogout) {
       onLogout()
     } else {
@@ -49,7 +54,9 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
               </Link>
             )}
 
-            {user ? (
+            {loading ? (
+              <div className={styles.authPlaceholder} aria-hidden="true" />
+            ) : user ? (
               <div className={styles.userArea}>
                 <span className={styles.username}>
                   {user.username}
