@@ -2439,7 +2439,8 @@ describe('Rate-limit headers — IETF draft-8 contract', () => {
     // Extract the limit numbers from the policy header (e.g. `"shorten-user"; q=60; w=900; pk=:...:`)
     const extractLimit = (policy: string): number => {
       const match = /q=(\d+)/.exec(policy.trim());
-      return match ? parseInt(match[1], 10) : 0;
+      if (!match) throw new Error(`Unexpected RateLimit-Policy format: ${policy}`);
+      return parseInt(match[1], 10);
     };
     expect(extractLimit(privPolicy)).toBeGreaterThan(extractLimit(userPolicy));
   });

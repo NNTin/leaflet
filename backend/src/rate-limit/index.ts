@@ -132,23 +132,40 @@ export function createRoleLimiter(
 // The combination is needed when multiple buckets fire on the same request
 // (e.g. anonymous POST /api/shorten hits both a session bucket and an IP
 // bucket simultaneously).
-// ---------------------------------------------------------------------------
+//
+// Implementation note: express-rate-limit draft-8 emits headers via
+// res.append → res.set → res.setHeader on the Node.js IncomingMessage.
+// We temporarily patch res.setHeader and res.end to intercept the individual
+// per-bucket values and commit a merged header pair before the first byte is
+// written.  The casts below are intentional: we need to reassign inherited
+// Node.js methods, which TypeScript's type system does not normally permit.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyFn = (...args: any[]) => any;
+
+/** Mutable view of the two response methods we temporarily override. */
+interface MutableResponse extends Response {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setHeader: AnyFn;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  end: AnyFn;
+}
 
 export function composeLimiters(...limiters: RequestHandler[]): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const rateLimitValues: string[] = [];
     const rateLimitPolicyValues: string[] = [];
 
-    const origSetHeader = res.setHeader.bind(res) as typeof res.setHeader;
-    const origEnd = res.end.bind(res) as typeof res.end;
+    const mutableRes = res as MutableResponse;
+    const origSetHeader: AnyFn = mutableRes.setHeader.bind(res);
+    const origEnd: AnyFn = mutableRes.end.bind(res);
 
     let cleaned = false;
 
     function cleanup(): void {
       if (cleaned) return;
       cleaned = true;
-      (res as unknown as { setHeader: typeof res.setHeader }).setHeader = origSetHeader;
-      (res as unknown as { end: typeof res.end }).end = origEnd;
+      mutableRes.setHeader = origSetHeader;
+      mutableRes.end = origEnd;
     }
 
     function commitHeaders(): void {
@@ -160,34 +177,31 @@ export function composeLimiters(...limiters: RequestHandler[]): RequestHandler {
       }
     }
 
-    // Intercept setHeader to accumulate rate-limit header values.
-    (res as unknown as { setHeader: (...args: unknown[]) => unknown }).setHeader = function (
-      name: unknown,
-      value: unknown,
-    ): unknown {
-      if (typeof name === 'string') {
-        const lower = name.toLowerCase();
-        if (lower === 'ratelimit') {
-          rateLimitValues.push(String(value));
-          return res;
-        }
-        if (lower === 'ratelimit-policy') {
-          rateLimitPolicyValues.push(String(value));
-          return res;
-        }
+    // Intercept setHeader to accumulate rate-limit header values rather than
+    // letting each limiter overwrite the previous one's entry.
+    mutableRes.setHeader = function interceptSetHeader(
+      name: string,
+      value: Parameters<Response['setHeader']>[1],
+    ): Response {
+      const lower = name.toLowerCase();
+      if (lower === 'ratelimit') {
+        rateLimitValues.push(String(value));
+        return res;
       }
-      return origSetHeader(name as string, value as Parameters<typeof res.setHeader>[1]);
+      if (lower === 'ratelimit-policy') {
+        rateLimitPolicyValues.push(String(value));
+        return res;
+      }
+      return origSetHeader(name, value) as Response;
     };
 
     // Intercept res.end so headers are committed even when a 429 is returned
     // (the limiter calls res.end indirectly via res.json/res.send before our
     // runNext chain has a chance to flush them).
-    (res as unknown as { end: (...args: unknown[]) => unknown }).end = function (
-      ...args: unknown[]
-    ): unknown {
+    mutableRes.end = function interceptEnd(...args: Parameters<Response['end']>): Response {
       cleanup();
       commitHeaders();
-      return (origEnd as (...a: unknown[]) => unknown)(...args);
+      return origEnd(...args) as Response;
     };
 
     let idx = 0;
