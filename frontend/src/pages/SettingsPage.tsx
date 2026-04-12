@@ -6,7 +6,7 @@ import { csrfHeaders } from '../api'
 import { providersCache, MISS } from '../authCache'
 import { PROVIDER_META_MAP } from '../providers'
 import { useSession } from '../session'
-import { parseRetryAfter, useCountdown, formatMMSS } from '../rateLimit'
+import { parseRetryAfter, useCountdown, formatMMSS, RateLimitError } from '../rateLimit'
 import styles from './SettingsPage.module.css'
 
 interface Identity {
@@ -204,7 +204,9 @@ export default function SettingsPage() {
       })
       await fetchIdentities()
     } catch (err) {
-      if (axios.isAxiosError(err)) {
+      if (err instanceof RateLimitError) {
+        setWriteRateLimitDeadline(parseRetryAfter(err.retryAfter))
+      } else if (axios.isAxiosError(err)) {
         if (err.response?.status === 429) {
           const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
           setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
@@ -264,7 +266,9 @@ export default function SettingsPage() {
       const label = PROVIDER_META_MAP[linkConflict.provider]?.label ?? linkConflict.provider
       setSuccess(`${label} is now connected after merging the duplicate account.`)
     } catch (err) {
-      if (axios.isAxiosError(err)) {
+      if (err instanceof RateLimitError) {
+        setWriteRateLimitDeadline(parseRetryAfter(err.retryAfter))
+      } else if (axios.isAxiosError(err)) {
         if (err.response?.status === 429) {
           const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
           setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
@@ -286,8 +290,22 @@ export default function SettingsPage() {
   }
 
   // Navigate to provider connect flow.
-  function handleConnect(provider: string) {
-    window.location.href = authUrl(`/${provider}/link`, window.location.href)
+  // Fix 4: probe the endpoint before navigating so a 429 is surfaced inline
+  // instead of showing a raw browser error page.
+  async function handleConnect(provider: string) {
+    setWriteRateLimitDeadline(null)
+    const url = authUrl(`/${provider}/link`, window.location.href)
+    try {
+      const res = await fetch(url, { redirect: 'manual', credentials: 'include' })
+      if (res.status === 429) {
+        const retryAfter = res.headers.get('retry-after')
+        setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
+        return
+      }
+      window.location.href = url
+    } catch {
+      window.location.href = url
+    }
   }
 
   // Account deletion handlers.
@@ -312,7 +330,10 @@ export default function SettingsPage() {
       clearSession()
       window.location.href = '/'
     } catch (err) {
-      if (axios.isAxiosError(err)) {
+      if (err instanceof RateLimitError) {
+        setWriteRateLimitDeadline(parseRetryAfter(err.retryAfter))
+        setShowDeleteModal(false)
+      } else if (axios.isAxiosError(err)) {
         if (err.response?.status === 429) {
           const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
           setWriteRateLimitDeadline(parseRetryAfter(retryAfter))

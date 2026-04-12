@@ -8,6 +8,7 @@ interface SessionContextValue {
   user: AuthUser | null;
   loading: boolean;
   meRateLimited: RateLimitState | null;
+  logoutRateLimited: RateLimitState | null;
   refreshSession: () => Promise<AuthUser | null>;
   clearSession: () => void;
   logout: () => Promise<void>;
@@ -21,6 +22,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(initialCached === MISS ? null : initialCached)
   const [loading, setLoading] = useState(initialCached === MISS)
   const [meRateLimited, setMeRateLimited] = useState<RateLimitState | null>(null)
+  const [logoutRateLimited, setLogoutRateLimited] = useState<RateLimitState | null>(null)
 
   // Core refresh logic (stable, no reactive deps captured).
   const doRefreshSession = useCallback(async (): Promise<AuthUser | null> => {
@@ -105,21 +107,41 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     providersCache.clear()
     setUser(null)
     setMeRateLimited(null)
+    setLogoutRateLimited(null)
     setLoading(false)
   }
 
   async function logout() {
+    setLogoutRateLimited(null)
     try {
       const headers = await csrfHeaders()
-      await fetch(authUrl('/logout'), { method: 'POST', credentials: 'include', headers })
-    } catch {
-    } finally {
+      const res = await fetch(authUrl('/logout'), { method: 'POST', credentials: 'include', headers })
+      if (res.status === 429) {
+        const retryAfter = res.headers.get('retry-after')
+        setLogoutRateLimited({
+          message: 'Logout rate limited. Please try again shortly.',
+          retryDeadline: parseRetryAfter(retryAfter),
+          isAutoRetry: false,
+        })
+        return // do NOT clear local session – server session is still active
+      }
+      clearSession()
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        setLogoutRateLimited({
+          message: 'Logout rate limited. Please try again shortly.',
+          retryDeadline: parseRetryAfter(err.retryAfter),
+          isAutoRetry: false,
+        })
+        return // do NOT clear local session – server session is still active
+      }
+      // Other errors: best-effort – still clear local session.
       clearSession()
     }
   }
 
   return (
-    <SessionContext.Provider value={{ user, loading, meRateLimited, refreshSession, clearSession, logout }}>
+    <SessionContext.Provider value={{ user, loading, meRateLimited, logoutRateLimited, refreshSession, clearSession, logout }}>
       {children}
     </SessionContext.Provider>
   )

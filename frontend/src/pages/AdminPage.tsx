@@ -4,7 +4,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import { csrfHeaders } from '../api'
 import { adminUrl, shortUrl } from '../urls'
 import { useSession } from '../session'
-import { parseRetryAfter, useCountdown, formatMMSS } from '../rateLimit'
+import { parseRetryAfter, useCountdown, formatMMSS, RateLimitError } from '../rateLimit'
 import styles from './AdminPage.module.css'
 
 const adminApi = axios.create({ baseURL: adminUrl(''), withCredentials: true })
@@ -121,7 +121,9 @@ export default function AdminPage() {
       setLinks(prev => prev.filter(l => l.id !== id))
       setActionMsg('Link deleted.')
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
+      if (err instanceof RateLimitError) {
+        setWriteRateLimitDeadline(parseRetryAfter(err.retryAfter))
+      } else if (axios.isAxiosError(err) && err.response?.status === 429) {
         const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
         setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
       } else {
@@ -138,7 +140,9 @@ export default function AdminPage() {
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u))
       setActionMsg(`User role updated to "${role}".`)
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
+      if (err instanceof RateLimitError) {
+        setWriteRateLimitDeadline(parseRetryAfter(err.retryAfter))
+      } else if (axios.isAxiosError(err) && err.response?.status === 429) {
         const retryAfter = (err.response.headers as Record<string, string | undefined>)['retry-after'] ?? null
         setWriteRateLimitDeadline(parseRetryAfter(retryAfter))
       } else {

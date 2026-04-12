@@ -18,6 +18,8 @@ export default function LoginModal({ onClose }: LoginModalProps) {
   const [providers, setProviders] = useState<AvailableProvider[] | null>(null)
   const [error, setError] = useState(false)
   const [rateLimited, setRateLimited] = useState<RateLimitState | null>(null)
+  // Separate rate-limit state for provider-click (auth-flow endpoint)
+  const [flowRateLimited, setFlowRateLimited] = useState<RateLimitState | null>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
 
   const fetchProviders = useCallback(() => {
@@ -53,6 +55,8 @@ export default function LoginModal({ onClose }: LoginModalProps) {
     return () => clearTimeout(id)
   }, [rateLimited, fetchProviders])
 
+  const flowCountdown = useCountdown(flowRateLimited?.retryDeadline ?? null)
+
   // Close on Escape key.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -70,6 +74,34 @@ export default function LoginModal({ onClose }: LoginModalProps) {
 
   function handleBackdropClick(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target === backdropRef.current) onClose()
+  }
+
+  // Fix 4: intercept the auth-flow navigation to catch 429 before the browser
+  // leaves the app. We probe with fetch(redirect:'manual'); if we get 429 we
+  // surface it inline. On an opaque redirect (normal case) we navigate.
+  async function handleProviderClick(e: React.MouseEvent, name: string) {
+    e.preventDefault()
+    setFlowRateLimited(null)
+
+    const url = authUrl(`/${name}`, window.location.href)
+    try {
+      const res = await fetch(url, { redirect: 'manual', credentials: 'include' })
+      if (res.status === 429) {
+        const retryAfter = res.headers.get('retry-after')
+        setFlowRateLimited({
+          message: 'Sign-in rate limited. Please wait before trying again.',
+          retryDeadline: parseRetryAfter(retryAfter),
+          isAutoRetry: false,
+        })
+        return
+      }
+      // Opaque redirect (type === 'opaqueredirect') or any non-429 response:
+      // proceed with the full-page navigation to the auth URL.
+      window.location.href = url
+    } catch {
+      // Network error – fall back to direct navigation.
+      window.location.href = url
+    }
   }
 
   return (
@@ -134,6 +166,16 @@ export default function LoginModal({ onClose }: LoginModalProps) {
             </p>
           )}
 
+          {/* Fix 4: rate-limit feedback for the auth-flow navigation itself. */}
+          {flowRateLimited && !flowCountdown.isExpired && (
+            <div className={styles.rateLimitState} aria-live="polite">
+              <p>{flowRateLimited.message}</p>
+              <p className={styles.rateLimitCountdown}>
+                {`Retry in ${formatMMSS(flowCountdown.msLeft)}`}
+              </p>
+            </div>
+          )}
+
           {!error && !rateLimited && providers !== null && providers.length > 0 && (
             <ul className={styles.providerList} role="list">
               {providers.map(({ name, label }) => {
@@ -144,6 +186,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
                     <a
                       href={authUrl(`/${name}`, window.location.href)}
                       className={styles.providerBtn}
+                      onClick={(e) => void handleProviderClick(e, name)}
                     >
                       <span className={styles.providerIcon} aria-hidden="true">
                         {IconComponent ? <IconComponent size={18} aria-hidden={true} /> : '🔑'}

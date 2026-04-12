@@ -37,13 +37,36 @@ function RateLimitIndicator({ retryDeadline }: { retryDeadline: number }) {
   )
 }
 
+function LogoutButton({ onLogout }: { onLogout: () => void }) {
+  const { logoutRateLimited } = useSession()
+  const countdown = useCountdown(logoutRateLimited?.retryDeadline ?? null)
+  const isDisabled = logoutRateLimited !== null && !countdown.isExpired
+
+  return (
+    <button
+      onClick={onLogout}
+      className="btn btn-secondary btn-sm"
+      disabled={isDisabled}
+      aria-disabled={isDisabled}
+      title={isDisabled ? logoutRateLimited?.message : undefined}
+    >
+      {isDisabled ? `Logout (${formatMMSS(countdown.msLeft)})` : 'Logout'}
+    </button>
+  )
+}
+
 export default function Navbar() {
   const navigate = useNavigate()
   const [showLogin, setShowLogin] = useState(false)
+  // Fix 3: do not show placeholder while loading if meRateLimited is set –
+  // the last-known state is being preserved and must remain visible.
   const { user, loading, meRateLimited, logout } = useSession()
 
   function handleLogout() {
-    void logout().finally(() => navigate('/'))
+    void logout().then(() => {
+      // Only navigate home if logout actually succeeded (user is now null after clearSession).
+      // If rate-limited, logout() returns without clearing, so we stay put.
+    })
   }
 
   return (
@@ -71,7 +94,9 @@ export default function Navbar() {
                 <RateLimitIndicator retryDeadline={meRateLimited.retryDeadline} />
               )}
 
-              {loading ? (
+              {/* Fix 3: only show placeholder during the very first load,
+                  not during auto-retry when we still have known state. */}
+              {loading && !meRateLimited ? (
                 <div className={styles.authPlaceholder} aria-hidden="true" />
               ) : user ? (
                 <div className={styles.userArea}>
@@ -84,9 +109,7 @@ export default function Navbar() {
                   <Link to="/settings" className={styles.link}>
                     Settings
                   </Link>
-                  <button onClick={handleLogout} className="btn btn-secondary btn-sm">
-                    Logout
-                  </button>
+                  <LogoutButton onLogout={handleLogout} />
                 </div>
               ) : (
                 <button
