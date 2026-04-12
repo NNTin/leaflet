@@ -306,14 +306,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "CSRF token to include as X-CSRF-Token header in mutating requests",
             "content": {
               "application/json": {
@@ -344,14 +344,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Array of available providers",
             "content": {
               "application/json": {
@@ -417,36 +417,36 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "302": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Redirects to the provider OAuth authorization page"
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unknown provider"
           },
           "503": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Provider not configured on this server"
           },
           "429": {
@@ -494,47 +494,47 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "302": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Redirects to the provider OAuth flow"
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unknown provider"
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Not authenticated"
           },
           "503": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Provider not configured"
           },
           "429": {
@@ -571,25 +571,25 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "302": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Redirects to frontend after authentication (with ?auth=link_conflict on conflict)"
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unknown provider",
             "content": {
               "application/json": {
@@ -600,14 +600,14 @@ const spec: OpenApiDocument = {
             }
           },
           "405": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Apple Sign In requires POST /auth/apple/callback",
             "content": {
               "application/json": {
@@ -618,14 +618,14 @@ const spec: OpenApiDocument = {
             }
           },
           "503": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Provider not configured on this server",
             "content": {
               "application/json": {
@@ -650,25 +650,25 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "302": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Redirects to frontend after authentication"
           },
           "503": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Apple provider not configured on this server",
             "content": {
               "application/json": {
@@ -701,14 +701,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Current user (with optional scopes for OAuth tokens) or null if not authenticated",
             "content": {
               "application/json": {
@@ -742,14 +742,14 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Bearer token is invalid or expired",
             "content": {
               "application/json": {
@@ -765,14 +765,14 @@ const spec: OpenApiDocument = {
             }
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "OAuth token lacks the required user:read scope",
             "content": {
               "application/json": {
@@ -809,14 +809,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Account deleted successfully",
             "content": {
               "application/json": {
@@ -835,25 +835,25 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Not authenticated"
           },
           "500": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Internal server error"
           },
           "429": {
@@ -876,14 +876,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Array of connected identities",
             "content": {
               "application/json": {
@@ -897,14 +897,14 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Not authenticated"
           },
           "429": {
@@ -944,14 +944,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Identity disconnected successfully",
             "content": {
               "application/json": {
@@ -970,14 +970,14 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Cannot disconnect the only remaining identity, or unknown provider",
             "content": {
               "application/json": {
@@ -988,25 +988,25 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Not authenticated"
           },
           "404": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Identity not found for this user"
           },
           "429": {
@@ -1029,14 +1029,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Successfully logged out",
             "content": {
               "application/json": {
@@ -1091,14 +1091,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Merge token issued",
             "content": {
               "application/json": {
@@ -1132,14 +1132,14 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Missing targetUserId, self-merge, or invalid input",
             "content": {
               "application/json": {
@@ -1150,25 +1150,25 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Not authenticated"
           },
           "404": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Target user not found"
           },
           "429": {
@@ -1210,14 +1210,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Merge completed successfully",
             "content": {
               "application/json": {
@@ -1236,14 +1236,14 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Missing token, no pending merge, or token expired",
             "content": {
               "application/json": {
@@ -1254,25 +1254,25 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Not authenticated"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Token mismatch"
           },
           "429": {
@@ -1357,14 +1357,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "HTML consent page",
             "content": {
               "text/html": {
@@ -1375,25 +1375,25 @@ const spec: OpenApiDocument = {
             }
           },
           "302": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Redirect to redirect_uri with code or error"
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Invalid request parameters",
             "content": {
               "application/json": {
@@ -1524,14 +1524,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Token response",
             "content": {
               "application/json": {
@@ -1542,14 +1542,14 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Invalid request or grant",
             "content": {
               "application/json": {
@@ -1560,14 +1560,14 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Invalid client credentials",
             "content": {
               "application/json": {
@@ -1625,14 +1625,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Revocation acknowledged (regardless of whether the token existed)"
           },
           "429": {
@@ -1658,14 +1658,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "List of consented applications",
             "content": {
               "application/json": {
@@ -1679,14 +1679,14 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Authentication required"
           },
           "429": {
@@ -1759,14 +1759,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "201": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Client registered; clientSecret is shown only once",
             "content": {
               "application/json": {
@@ -1777,25 +1777,25 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Validation error"
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Authentication required"
           },
           "429": {
@@ -1832,47 +1832,47 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Application revoked"
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Authentication required"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Forbidden"
           },
           "404": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Client not found"
           },
           "429": {
@@ -1935,14 +1935,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "201": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Short URL created",
             "content": {
               "application/json": {
@@ -1966,14 +1966,14 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Validation error",
             "content": {
               "application/json": {
@@ -1984,14 +1984,14 @@ const spec: OpenApiDocument = {
             }
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Forbidden - insufficient permissions",
             "content": {
               "application/json": {
@@ -2002,14 +2002,14 @@ const spec: OpenApiDocument = {
             }
           },
           "409": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Alias already in use",
             "content": {
               "application/json": {
@@ -2020,14 +2020,14 @@ const spec: OpenApiDocument = {
             }
           },
           "429": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Rate limit exceeded (anonymous users)",
             "content": {
               "application/json": {
@@ -2153,14 +2153,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "List of all short URLs",
             "content": {
               "application/json": {
@@ -2174,25 +2174,25 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unauthorized"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Admin access required"
           },
           "429": {
@@ -2228,47 +2228,47 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "URL deleted"
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unauthorized"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Admin access required"
           },
           "404": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "URL not found"
           },
           "429": {
@@ -2294,14 +2294,14 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "List of all users",
             "content": {
               "application/json": {
@@ -2315,25 +2315,25 @@ const spec: OpenApiDocument = {
             }
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unauthorized"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Admin access required"
           },
           "429": {
@@ -2391,14 +2391,14 @@ const spec: OpenApiDocument = {
         },
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Updated user object",
             "content": {
               "application/json": {
@@ -2409,47 +2409,47 @@ const spec: OpenApiDocument = {
             }
           },
           "400": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Validation error"
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unauthorized"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Admin access required"
           },
           "404": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "User not found"
           },
           "429": {
@@ -2539,47 +2539,47 @@ const spec: OpenApiDocument = {
         ],
         "responses": {
           "200": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "URL deleted"
           },
           "401": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Unauthorized"
           },
           "403": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "Admin access required"
           },
           "404": {
-                      "headers": {
-            "RateLimit": {
-              "$ref": "#/components/headers/RateLimit"
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
             },
-            "RateLimit-Policy": {
-              "$ref": "#/components/headers/RateLimit-Policy"
-            }
-          },
             "description": "URL not found"
           },
           "429": {
