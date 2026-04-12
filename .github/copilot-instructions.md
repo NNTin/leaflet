@@ -1,4 +1,4 @@
-# 🌱 AGENTS.md — Leaflet Engineering Standards
+# 🌱💌 AGENTS.md — Leaflet Engineering Standards
 
 ## 🎯 Purpose
 This document defines the **non-negotiable engineering standards** for all contributors and AI agents working on Leaflet.

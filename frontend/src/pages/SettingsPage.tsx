@@ -1,18 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Navigate } from 'react-router-dom'
 import axios from 'axios'
-import Navbar from '../components/Navbar'
 import { authUrl } from '../urls'
 import { csrfHeaders } from '../api'
-import { meCache, providersCache, MISS } from '../authCache'
+import { providersCache, MISS } from '../authCache'
 import { PROVIDER_META_MAP } from '../providers'
+import { useSession } from '../session'
 import styles from './SettingsPage.module.css'
-
-interface User {
-  id: number;
-  username: string;
-  role: string;
-}
 
 interface Identity {
   id: number;
@@ -71,7 +65,7 @@ function clearLinkConflictSearchParams() {
 }
 
 export default function SettingsPage() {
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const { user, loading, clearSession } = useSession()
   const [identities, setIdentities] = useState<Identity[]>([])
   const [loadingIdentities, setLoadingIdentities] = useState(false)
   const [availableProviders, setAvailableProviders] = useState<string[] | null>(null)
@@ -94,22 +88,6 @@ export default function SettingsPage() {
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [showDeleteModal, deleting])
-
-  // Fetch current user (with cache).
-  useEffect(() => {
-    const cached = meCache.get()
-    if (cached !== MISS) {
-      setUser(cached)
-      return
-    }
-    axios
-      .get<User | null>(authUrl('/me'), { withCredentials: true })
-      .then((res) => {
-        meCache.set(res.data)
-        setUser(res.data)
-      })
-      .catch(() => setUser(null))
-  }, [])
 
   // Fetch which providers are configured on this server (with cache, proper error handling).
   useEffect(() => {
@@ -279,8 +257,7 @@ export default function SettingsPage() {
     try {
       const headers = await csrfHeaders()
       await axios.delete(authUrl('/me'), { withCredentials: true, headers })
-      meCache.clear()
-      providersCache.clear()
+      clearSession()
       window.location.href = '/'
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -296,14 +273,11 @@ export default function SettingsPage() {
 
   const connectedProviders = new Set(identities.map((i) => i.provider))
 
-  if (user === undefined) {
+  if (loading) {
     return (
-      <div className={styles.page}>
-        <Navbar user={null} />
-        <main className={styles.main}>
-          <div className={styles.loading}>Loading…</div>
-        </main>
-      </div>
+      <main className={styles.main}>
+        <div className={styles.loading}>Loading…</div>
+      </main>
     )
   }
 
@@ -313,10 +287,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className={styles.page}>
-      <Navbar user={user} />
-      <main className={styles.main}>
-        <div className={styles.content}>
+    <main className={styles.main}>
+      <div className={styles.content}>
           <h1 className={styles.heading}>Settings</h1>
           <p className={styles.subheading}>Manage your account and connected login methods.</p>
 
@@ -439,8 +411,7 @@ export default function SettingsPage() {
               Delete Account
             </button>
           </section>
-        </div>
-      </main>
+      </div>
 
       {showDeleteModal && (
         <div
@@ -487,6 +458,6 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   )
 }

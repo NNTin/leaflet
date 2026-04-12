@@ -6,3 +6,5 @@ dist/
 
 .ao/
 agent-orchestrator.yaml
+
+.chunkhound/

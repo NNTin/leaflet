@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { meCache, providersCache } from '../authCache'
 import SettingsPage from '../pages/SettingsPage'
+import { SessionProvider } from '../session'
 
 const mocks = vi.hoisted(() => {
   const axiosGet = vi.fn()
@@ -43,11 +45,23 @@ vi.mock('axios', () => {
 describe('SettingsPage', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/settings')
+    meCache.clear()
+    providersCache.clear()
     mocks.axiosGet.mockReset()
     mocks.axiosDelete.mockReset()
     mocks.axiosPost.mockReset()
     mocks.axiosCreate.mockClear()
   })
+
+  function renderSettingsPage() {
+    render(
+      <MemoryRouter>
+        <SessionProvider>
+          <SettingsPage />
+        </SessionProvider>
+      </MemoryRouter>,
+    )
+  }
 
   it('renders connected accounts when the identities payload is wrapped in an object', async () => {
     mocks.axiosGet.mockImplementation((url: string) => {
@@ -86,15 +100,10 @@ describe('SettingsPage', () => {
       throw new Error(`Unexpected axios.get call for ${url}`)
     })
 
-    render(
-      <MemoryRouter>
-        <SettingsPage />
-      </MemoryRouter>,
-    )
+    renderSettingsPage()
 
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByText('Connected Accounts')).toBeInTheDocument()
-    expect(screen.getByText('settingsuser')).toBeInTheDocument()
     expect(await screen.findByText('GitHub')).toBeInTheDocument()
     expect(await screen.findByText('settings@example.com')).toBeInTheDocument()
   })
@@ -187,11 +196,7 @@ describe('SettingsPage', () => {
       throw new Error(`Unexpected axios.post call for ${url}`)
     })
 
-    render(
-      <MemoryRouter>
-        <SettingsPage />
-      </MemoryRouter>,
-    )
+    renderSettingsPage()
 
     expect(await screen.findByRole('heading', { name: 'Account merge required' })).toBeInTheDocument()
     expect(screen.getByText(/already connected to another Leaflet account/i)).toBeInTheDocument()
@@ -252,11 +257,7 @@ describe('SettingsPage', () => {
       throw new Error(`Unexpected axios.get call for ${url}`)
     })
 
-    render(
-      <MemoryRouter>
-        <SettingsPage />
-      </MemoryRouter>,
-    )
+    renderSettingsPage()
 
     expect(await screen.findByText('Google is already connected to this account.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Account merge required' })).not.toBeInTheDocument()

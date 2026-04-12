@@ -1,9 +1,56 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { meCache, providersCache } from '../authCache'
 import App from '../App'
 
+const mocks = vi.hoisted(() => {
+  const axiosGet = vi.fn()
+  const axiosCreate = vi.fn(() => ({
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+    interceptors: {
+      request: { use: vi.fn() },
+      response: { use: vi.fn() },
+    },
+  }))
+
+  return {
+    axiosGet,
+    axiosCreate,
+  }
+})
+
+vi.mock('axios', () => {
+  const axios = {
+    get: mocks.axiosGet,
+    create: mocks.axiosCreate,
+    isAxiosError: (value: unknown) => Boolean((value as { isAxiosError?: boolean } | null)?.isAxiosError),
+  }
+
+  return {
+    default: axios,
+  }
+})
+
 describe('App routes', () => {
+  beforeEach(() => {
+    meCache.clear()
+    providersCache.clear()
+    mocks.axiosGet.mockReset()
+    mocks.axiosCreate.mockClear()
+
+    mocks.axiosGet.mockImplementation((url: string) => {
+      if (url.endsWith('/auth/me')) {
+        return Promise.resolve({ data: null })
+      }
+
+      throw new Error(`Unexpected axios.get call for ${url}`)
+    })
+  })
+
   it('renders the generic error page on /error', async () => {
     render(
       <MemoryRouter initialEntries={['/error']}>

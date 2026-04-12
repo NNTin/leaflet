@@ -1,6 +1,8 @@
 import { Suspense, lazy } from 'react'
 import { Routes, Route } from 'react-router-dom'
+import AppLayout from './components/AppLayout'
 import LoadingSpinner from './components/LoadingSpinner'
+import { SessionProvider } from './session'
 
 const HomePage = lazy(() => import('./pages/HomePage'))
 const ResultPage = lazy(() => import('./pages/ResultPage'))
@@ -13,18 +15,22 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 export default function App() {
   return (
-    <Suspense fallback={<LoadingSpinner fullPage />}>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/result" element={<ResultPage />} />
-        <Route path="/expired" element={<ExpiredPage />} />
-        <Route path="/error" element={<ErrorPage />} />
-        <Route path="/s/:code" element={<RedirectPage />} />
-        <Route path="/developer" element={<DeveloperPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="*" element={<ErrorPage statusCode={404} message="Page not found" />} />
-      </Routes>
-    </Suspense>
+    <SessionProvider>
+      <Suspense fallback={<LoadingSpinner fullPage />}>
+        <Routes>
+          <Route path="/s/:code" element={<RedirectPage />} />
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/result" element={<ResultPage />} />
+            <Route path="/expired" element={<ExpiredPage />} />
+            <Route path="/error" element={<ErrorPage />} />
+            <Route path="/developer" element={<DeveloperPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<ErrorPage statusCode={404} message="Page not found" />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    </SessionProvider>
   )
 }
