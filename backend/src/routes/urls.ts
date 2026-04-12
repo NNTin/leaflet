@@ -81,7 +81,7 @@ export async function humanRedirectShortCode(req: Request, res: Response, next: 
 
     if (result.rows.length === 0) {
       const acceptHeader = req.headers['accept'] ?? '';
-      if ((acceptHeader as string).includes('text/html')) {
+      if (acceptHeader.includes('text/html')) {
         const expiredUrl = `${defaultFrontendUrl.replace(/\/+$/, '')}/expired`;
         res.redirect(302, expiredUrl);
         return;

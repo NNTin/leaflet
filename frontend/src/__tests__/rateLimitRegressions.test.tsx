@@ -187,9 +187,7 @@ describe('Regression 3 – /auth/me rate-limited: user state stays visible durin
     // placeholder that would otherwise mask the Login button / user state.
     mocks.axiosGet.mockImplementation((url: string) => {
       if (url.endsWith('/auth/me')) {
-        return Promise.reject(
-          Object.assign(new RateLimitError('5'), {})
-        )
+        return Promise.reject(new RateLimitError('5'))
       }
       throw new Error(`Unexpected GET: ${url}`)
     })

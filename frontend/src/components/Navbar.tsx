@@ -63,10 +63,7 @@ export default function Navbar() {
   const { user, loading, meRateLimited, logout } = useSession()
 
   function handleLogout() {
-    void logout().then(() => {
-      // Only navigate home if logout actually succeeded (user is now null after clearSession).
-      // If rate-limited, logout() returns without clearing, so we stay put.
-    })
+    void logout()
   }
 
   return (
