@@ -2058,24 +2058,6 @@ const spec: OpenApiDocument = {
               }
             }
           },
-          "403": {
-            "headers": {
-              "RateLimit": {
-                "$ref": "#/components/headers/RateLimit"
-              },
-              "RateLimit-Policy": {
-                "$ref": "#/components/headers/RateLimit-Policy"
-              }
-            },
-            "description": "Bearer token lacks the required user:read scope",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }

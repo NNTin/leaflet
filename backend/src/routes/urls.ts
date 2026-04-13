@@ -7,6 +7,7 @@ import { User } from '../models/user';
 import { publicShortUrlBase, defaultFrontendUrl } from '../config';
 import {
   getShortenCapabilities,
+  getShortenTtlOptions,
   SHORTEN_TTL_MAP,
   SHORTEN_TTL_VALUES,
   type ShortenTtl,
@@ -47,15 +48,11 @@ function getShortenCallerUser(req: Request, mode: ShortenAuthMode): User | null 
   return (req.user as User) ?? null;
 }
 
-function isOAuthCaller(req: Request, mode: ShortenAuthMode): boolean {
-  return mode === 'public' ? req.oauthAuthenticated === true : req.oauthAuthenticated === true;
-}
-
 function buildShortenCapabilities(req: Request, mode: ShortenAuthMode) {
   const user = getShortenCallerUser(req, mode);
   return getShortenCapabilities({
     user,
-    oauthAuthenticated: isOAuthCaller(req, mode),
+    oauthAuthenticated: req.oauthAuthenticated === true,
     oauthScopes: req.oauthScopes,
   });
 }
@@ -109,6 +106,19 @@ export function createShortenHandler(mode: ShortenAuthMode): RequestHandler {
         if (!canRoleUseCustomAlias(user?.role ?? null)) {
           return res.status(403).json({ error: 'Privileged account required for custom aliases.' });
         }
+      }
+
+      const allowedTtls = getShortenTtlOptions({
+        user,
+        oauthAuthenticated: req.oauthAuthenticated === true,
+        oauthScopes: req.oauthScopes,
+      }).map(({ value }) => value);
+
+      if (!allowedTtls.includes(ttl as ShortenTtl)) {
+        return res.status(403).json({
+          error: 'This TTL option is not available for your account.',
+          hint: `Allowed TTL values for your current role and authentication: ${allowedTtls.length > 0 ? allowedTtls.join(', ') : 'none'}`,
+        });
       }
 
       let shortCode: string;

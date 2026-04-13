@@ -55,11 +55,24 @@ export default function AuthProviderList({ returnTo }: AuthProviderListProps) {
 
   const flowCountdown = useCountdown(flowRateLimited?.retryDeadline ?? null)
 
+  function isSameOriginAuthUrl(url: string): boolean {
+    try {
+      return new URL(url, window.location.href).origin === window.location.origin
+    } catch {
+      return false
+    }
+  }
+
   async function handleProviderClick(e: React.MouseEvent, name: string) {
     e.preventDefault()
     setFlowRateLimited(null)
 
     const url = authUrl(`/${name}`, returnTo)
+
+    if (!isSameOriginAuthUrl(url)) {
+      window.location.href = url
+      return
+    }
 
     try {
       const res = await fetch(url, { redirect: 'manual', credentials: 'include' })

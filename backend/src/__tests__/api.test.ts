@@ -893,6 +893,16 @@ describe('POST /api/shorten - TTL values', () => {
     const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send({ url: 'https://example.com', ttl: '60m' });
     expect(res.status).toBe(400);
   });
+
+  it('rejects ttl=1w for anonymous users with 403', async () => {
+    const ip = '10.99.2.10';
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip);
+    const csrf = csrfRes.body.csrfToken as string;
+    const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send({ url: 'https://example.com', ttl: '1w' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('This TTL option is not available for your account.');
+  });
 });
 
 describe('POST /api/shorten - role enforcement', () => {
