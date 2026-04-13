@@ -32,6 +32,13 @@ cookies, browser sessions, and CSRF protections.
 Rules:
 
 - CORS is restricted to configured first-party frontend origins.
+- The allowlist is defined by `ALLOWED_FRONTEND_ORIGINS` in backend config
+  (`src/config.ts`).
+- If `ALLOWED_FRONTEND_ORIGINS` is unset/empty, backend falls back to the
+  origin derived from `DEFAULT_FRONTEND_URL` (or `FRONTEND_URL`, then
+  `http://localhost:5173`).
+- Enforcement happens in `src/app.ts` via the `firstPartyCors` policy, which
+  checks `isAllowedFrontendOrigin(origin)`.
 - `Access-Control-Allow-Credentials` may be enabled.
 - Browser session cookies are allowed.
 - Browser mutations continue to require CSRF protection.
@@ -110,6 +117,12 @@ Rationale:
 ## Operational Expectations
 
 - First-party frontend origins remain environment-configured and exact.
+- Runtime source of truth:
+  - `src/config.ts`: parses `ALLOWED_FRONTEND_ORIGINS` into
+    `allowedFrontendOrigins` and provides `isAllowedFrontendOrigin`.
+  - `src/app.ts`: applies `firstPartyCors` to session-backed route families.
+  - `.env.example`: currently documents `FRONTEND_URL`; set
+    `ALLOWED_FRONTEND_ORIGINS` explicitly in deployed environments.
 - Public browser routes are safe to call from arbitrary origins because they do
   not expose or consume browser session state.
 - Tests should verify both allowed and denied origin behavior for each policy

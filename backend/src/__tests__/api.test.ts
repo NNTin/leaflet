@@ -545,7 +545,7 @@ jest.mock('../shortcode', () => ({
   generateShortCode: jest.fn(async () => 'testcode'),
 }));
 
-process.env.ALLOWED_FRONTEND_ORIGINS = 'http://localhost:5173,https://nntin.xyz,https://leaflet.lair.nntin.xyz';
+process.env.ALLOWED_FRONTEND_ORIGINS = 'http://localhost:5173,https://nntin.xyz,https://leaflet.lair.nntin.xyz,https://*.leafspots.preview.nntin.xyz';
 process.env.PUBLIC_SHORT_URL_BASE = 'https://leaflet.lair.nntin.xyz/s';
 process.env.PUBLIC_API_ORIGIN = 'https://leaflet.lair.nntin.xyz';
 process.env.DEFAULT_FRONTEND_URL = 'http://localhost:5173';
@@ -1116,6 +1116,30 @@ describe('CSRF protection', () => {
     expect(res.status).toBe(403);
   });
 
+  it('accepts wildcard preview origins with valid CSRF tokens', async () => {
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', '10.99.5.31');
+    const res = await agent
+      .post('/api/shorten')
+      .set('Origin', 'https://feature-branch.leafspots.preview.nntin.xyz')
+      .set('X-CSRF-Token', csrfRes.body.csrfToken as string)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects hostile suffixes that only prefix-match the wildcard preview domain', async () => {
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', '10.99.5.32');
+    const res = await agent
+      .post('/api/shorten')
+      .set('Origin', 'https://feature-branch.leafspots.preview.nntin.xyz.evil.test')
+      .set('X-CSRF-Token', csrfRes.body.csrfToken as string)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(403);
+  });
+
   it('requires CSRF tokens for browser-session mutations', async () => {
     const admin = makeAdminUser();
     db.urls.push({ id: 1, short_code: 'delete-me', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
@@ -1311,6 +1335,11 @@ describe('OAuth returnTo validation', () => {
   it('allows Pages returnTo URLs under /leafspots', () => {
     const resolved = validateOAuthReturnTo('https://nntin.xyz/leafspots/');
     expect(resolved).toBe('https://nntin.xyz/leafspots/');
+  });
+
+  it('allows preview returnTo URLs on the wildcard preview domain', () => {
+    const resolved = validateOAuthReturnTo('https://feature-branch.leafspots.preview.nntin.xyz/share/abc');
+    expect(resolved).toBe('https://feature-branch.leafspots.preview.nntin.xyz/share/abc');
   });
 
   it('rejects unrelated Pages returnTo paths', () => {

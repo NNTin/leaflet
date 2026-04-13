@@ -16,6 +16,12 @@ function toOrigin(value: string): string | null {
   }
 }
 
+interface WildcardOriginRule {
+  protocol: string;
+  hostnameSuffix: string;
+  port: string;
+}
+
 function normalizeUrl(value: string, fallback: string): string {
   try {
     return new URL(value).toString();
@@ -41,6 +47,41 @@ function parseOriginList(value: string | undefined): string[] {
   return Array.from(new Set(origins));
 }
 
+function parseWildcardOrigin(value: string): WildcardOriginRule | null {
+  if (!/^https?:\/\/\*\./i.test(value)) return null;
+
+  try {
+    const parsed = new URL(value.replace('://*.', '://wildcard.'));
+    if (parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+    if (!parsed.hostname.startsWith('wildcard.')) return null;
+
+    return {
+      protocol: parsed.protocol,
+      hostnameSuffix: parsed.hostname.slice('wildcard.'.length),
+      port: parsed.port,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseWildcardOriginList(value: string | undefined): WildcardOriginRule[] {
+  if (!value) return [];
+
+  const rules = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(parseWildcardOrigin)
+    .filter((rule): rule is WildcardOriginRule => rule !== null);
+
+  return Array.from(
+    new Map(
+      rules.map((rule) => [`${rule.protocol}//*.${rule.hostnameSuffix}:${rule.port}`, rule]),
+    ).values(),
+  );
+}
+
 export const defaultFrontendUrl = normalizeUrl(
   process.env.DEFAULT_FRONTEND_URL || process.env.FRONTEND_URL || LOCAL_FRONTEND_URL,
   LOCAL_FRONTEND_URL
@@ -49,6 +90,7 @@ export const defaultFrontendUrl = normalizeUrl(
 const fallbackFrontendOrigin = toOrigin(defaultFrontendUrl) ?? LOCAL_FRONTEND_URL;
 
 export const allowedFrontendOrigins = parseOriginList(process.env.ALLOWED_FRONTEND_ORIGINS);
+export const allowedFrontendOriginWildcards = parseWildcardOriginList(process.env.ALLOWED_FRONTEND_ORIGINS);
 if (allowedFrontendOrigins.length === 0) {
   allowedFrontendOrigins.push(fallbackFrontendOrigin);
 }
@@ -57,7 +99,19 @@ export const publicApiOrigin = trimTrailingSlash(process.env.PUBLIC_API_ORIGIN |
 export const publicShortUrlBase = trimTrailingSlash(process.env.PUBLIC_SHORT_URL_BASE || `${publicApiOrigin}/s`);
 
 export function isAllowedFrontendOrigin(origin: string): boolean {
-  return allowedFrontendOrigins.includes(origin);
+  try {
+    const url = new URL(origin);
+    if (allowedFrontendOrigins.includes(url.origin)) return true;
+
+    return allowedFrontendOriginWildcards.some((rule) =>
+      url.protocol === rule.protocol &&
+      url.port === rule.port &&
+      url.hostname !== rule.hostnameSuffix &&
+      url.hostname.endsWith(`.${rule.hostnameSuffix}`),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function allowsReturnPath(url: URL): boolean {
