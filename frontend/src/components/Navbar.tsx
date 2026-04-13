@@ -79,6 +79,10 @@ export default function Navbar() {
               Developer API
             </Link>
 
+            <Link to="/cli" className={styles.link}>
+              CLI Usage
+            </Link>
+
             {user?.role === 'admin' && (
               <Link to="/admin" className={styles.link}>
                 Admin
