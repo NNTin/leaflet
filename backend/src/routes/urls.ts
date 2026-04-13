@@ -1,24 +1,22 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import { body, validationResult } from 'express-validator';
 import pool from '../db';
 import { generateShortCode } from '../shortcode';
 import { ensureScopeForOAuthRequest, optionalBearerAuth, requireAdmin, requireAuth, requireScope } from '../middleware/auth';
 import { User } from '../models/user';
 import { publicShortUrlBase, defaultFrontendUrl } from '../config';
+import {
+  getShortenCapabilities,
+  getShortenTtlOptions,
+  SHORTEN_TTL_MAP,
+  SHORTEN_TTL_VALUES,
+  type ShortenTtl,
+  canRoleUseCustomAlias,
+  canRoleUseNeverTtl,
+} from '../shorten-policy';
 
 const router = express.Router();
-
-const MS_PER_SECOND = 1000;
-const SECONDS_PER_MINUTE = 60;
-const MINUTES_PER_HOUR = 60;
-const HOURS_PER_DAY = 24;
-
-const TTL_MAP: Record<string, number | null> = {
-  '5m': 5 * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  '1h': MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  '24h': HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
-  'never': null,
-};
+export type ShortenAuthMode = 'session' | 'public';
 
 interface UrlRow {
   id: number;
@@ -39,6 +37,128 @@ function toUrlDto(row: UrlRow) {
     expiresAt: row.expires_at,
     isCustom: row.is_custom,
     createdBy: row.created_by ?? null,
+  };
+}
+
+function getShortenCallerUser(req: Request, mode: ShortenAuthMode): User | null {
+  if (mode === 'public' && req.oauthAuthenticated !== true) {
+    return null;
+  }
+
+  return (req.user as User) ?? null;
+}
+
+function buildShortenCapabilities(req: Request, mode: ShortenAuthMode) {
+  const user = getShortenCallerUser(req, mode);
+  return getShortenCapabilities({
+    user,
+    oauthAuthenticated: req.oauthAuthenticated === true,
+    oauthScopes: req.oauthScopes,
+  });
+}
+
+export const shortenValidators = [
+  body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
+  body('ttl').isIn(SHORTEN_TTL_VALUES).withMessage(`TTL must be one of: ${SHORTEN_TTL_VALUES.join(', ')}`),
+  body('alias')
+    .optional()
+    .matches(/^[a-zA-Z0-9-_]+$/)
+    .isLength({ min: 3, max: 50 })
+    .withMessage('Alias must be 3-50 characters (letters, numbers, hyphens, underscores)'),
+];
+
+export function createShortenCapabilitiesHandler(mode: ShortenAuthMode): RequestHandler {
+  return (req: Request, res: Response) => {
+    res.json(buildShortenCapabilities(req, mode));
+  };
+}
+
+export function createShortenHandler(mode: ShortenAuthMode): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { url, ttl, alias } = req.body as { url: string; ttl: string; alias?: string };
+      const user = getShortenCallerUser(req, mode);
+
+      if (!ensureScopeForOAuthRequest(req, res, 'shorten:create')) {
+        return;
+      }
+
+      if (ttl === 'never') {
+        if (!ensureScopeForOAuthRequest(req, res, 'shorten:create:never')) {
+          return;
+        }
+
+        if (!canRoleUseNeverTtl(user?.role ?? null)) {
+          return res.status(403).json({ error: 'Admin access required to create links with no expiration.' });
+        }
+      }
+
+      if (alias) {
+        if (!ensureScopeForOAuthRequest(req, res, 'shorten:create:alias')) {
+          return;
+        }
+
+        if (!canRoleUseCustomAlias(user?.role ?? null)) {
+          return res.status(403).json({ error: 'Privileged account required for custom aliases.' });
+        }
+      }
+
+      const allowedTtls = getShortenTtlOptions({
+        user,
+        oauthAuthenticated: req.oauthAuthenticated === true,
+        oauthScopes: req.oauthScopes,
+      }).map(({ value }) => value);
+
+      if (!allowedTtls.includes(ttl as ShortenTtl)) {
+        return res.status(403).json({
+          error: 'This TTL option is not available for your account.',
+          hint: `Allowed TTL values for your current role and authentication: ${allowedTtls.length > 0 ? allowedTtls.join(', ') : 'none'}`,
+        });
+      }
+
+      let shortCode: string;
+      let isCustom = false;
+
+      if (alias) {
+        const existing = await pool.query('SELECT id FROM urls WHERE short_code = $1', [alias]);
+        if (existing.rows.length > 0) {
+          return res.status(409).json({ error: 'This alias is already in use.' });
+        }
+        shortCode = alias;
+        isCustom = true;
+      } else {
+        const generated = await generateShortCode(pool);
+        if (!generated) {
+          return res.status(500).json({ error: 'Could not generate a unique short code. Please try again.' });
+        }
+        shortCode = generated;
+      }
+
+      const ttlMs = SHORTEN_TTL_MAP[ttl as ShortenTtl];
+      const expiresAt = ttlMs !== null && ttlMs !== undefined ? new Date(Date.now() + ttlMs) : null;
+
+      const result = await pool.query(
+        `INSERT INTO urls (short_code, original_url, user_id, expires_at, is_custom)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING short_code, expires_at`,
+        [shortCode, url, user ? user.id : null, expiresAt, isCustom]
+      );
+
+      const row = result.rows[0] as { short_code: string; expires_at: Date | null };
+
+      res.status(201).json({
+        shortCode: row.short_code,
+        shortUrl: `${publicShortUrlBase}/${encodeURIComponent(row.short_code)}`,
+        expiresAt: row.expires_at,
+      });
+    } catch (err) {
+      next(err);
+    }
   };
 }
 
@@ -96,92 +216,9 @@ export async function humanRedirectShortCode(req: Request, res: Response, next: 
   }
 }
 
-router.post(
-  '/shorten',
-  optionalBearerAuth,
-  [
-    body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
-    body('ttl').isIn(['5m', '1h', '24h', 'never']).withMessage('TTL must be one of: 5m, 1h, 24h, never'),
-    body('alias')
-      .optional()
-      .matches(/^[a-zA-Z0-9-_]+$/)
-      .isLength({ min: 3, max: 50 })
-      .withMessage('Alias must be 3-50 characters (letters, numbers, hyphens, underscores)'),
-  ],
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
+router.get('/shorten/capabilities', optionalBearerAuth, createShortenCapabilitiesHandler('session'));
 
-      const { url, ttl, alias } = req.body as { url: string; ttl: string; alias?: string };
-      const user = (req.user as User) ?? null;
-
-      if (!ensureScopeForOAuthRequest(req, res, 'shorten:create')) {
-        return;
-      }
-
-      if (ttl === 'never') {
-        if (!ensureScopeForOAuthRequest(req, res, 'shorten:create:never')) {
-          return;
-        }
-
-        if (!user || user.role !== 'admin') {
-          return res.status(403).json({ error: 'Admin access required to create links with no expiration.' });
-        }
-      }
-
-      if (alias) {
-        if (!ensureScopeForOAuthRequest(req, res, 'shorten:create:alias')) {
-          return;
-        }
-
-        if (!user || (user.role !== 'privileged' && user.role !== 'admin')) {
-          return res.status(403).json({ error: 'Privileged account required for custom aliases.' });
-        }
-      }
-
-      let shortCode: string;
-      let isCustom = false;
-
-      if (alias) {
-        const existing = await pool.query('SELECT id FROM urls WHERE short_code = $1', [alias]);
-        if (existing.rows.length > 0) {
-          return res.status(409).json({ error: 'This alias is already in use.' });
-        }
-        shortCode = alias;
-        isCustom = true;
-      } else {
-        const generated = await generateShortCode(pool);
-        if (!generated) {
-          return res.status(500).json({ error: 'Could not generate a unique short code. Please try again.' });
-        }
-        shortCode = generated;
-      }
-
-      const ttlMs = TTL_MAP[ttl];
-      const expiresAt = ttlMs !== null && ttlMs !== undefined ? new Date(Date.now() + ttlMs) : null;
-
-      const result = await pool.query(
-        `INSERT INTO urls (short_code, original_url, user_id, expires_at, is_custom)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING short_code, expires_at`,
-        [shortCode, url, user ? user.id : null, expiresAt, isCustom]
-      );
-
-      const row = result.rows[0] as { short_code: string; expires_at: Date | null };
-
-      res.status(201).json({
-        shortCode: row.short_code,
-        shortUrl: `${publicShortUrlBase}/${encodeURIComponent(row.short_code)}`,
-        expiresAt: row.expires_at,
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
+router.post('/shorten', optionalBearerAuth, shortenValidators, createShortenHandler('session'));
 
 router.get('/urls', requireAuth, requireScope('urls:read'), requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {

@@ -545,7 +545,7 @@ jest.mock('../shortcode', () => ({
   generateShortCode: jest.fn(async () => 'testcode'),
 }));
 
-process.env.ALLOWED_FRONTEND_ORIGINS = 'http://localhost:5173,https://nntin.xyz,https://leaflet.lair.nntin.xyz';
+process.env.ALLOWED_FRONTEND_ORIGINS = 'http://localhost:5173,https://nntin.xyz,https://leaflet.lair.nntin.xyz,https://*.leafspots.preview.nntin.xyz';
 process.env.PUBLIC_SHORT_URL_BASE = 'https://leaflet.lair.nntin.xyz/s';
 process.env.PUBLIC_API_ORIGIN = 'https://leaflet.lair.nntin.xyz';
 process.env.DEFAULT_FRONTEND_URL = 'http://localhost:5173';
@@ -704,7 +704,7 @@ describe('OpenAPI TTL enum contract', () => {
         requestBody: { content: { 'application/json': { schema: { properties: { ttl: { enum: string[] } } } } } };
       }
     ).requestBody.content['application/json'].schema.properties.ttl.enum;
-    expect(ttlEnum.sort()).toEqual(['24h', '1h', '5m', 'never'].sort());
+    expect(ttlEnum.sort()).toEqual(['24h', '1h', '1w', '5m', 'never'].sort());
   });
 
   it('does not contain deprecated 60m value', () => {
@@ -728,6 +728,18 @@ describe('OpenAPI TTL enum contract', () => {
     expect(callbackResponses).toHaveProperty('405');
     expect(callbackResponses).toHaveProperty('503');
     expect(appleCallbackResponses).toHaveProperty('503');
+  });
+
+  it('documents the shorten capabilities endpoint', () => {
+    const capabilities = (
+      baseSpec.paths['/api/shorten/capabilities'].get as { responses: Record<string, unknown> }
+    );
+
+    expect(capabilities).toBeDefined();
+    expect(capabilities.responses).toHaveProperty('200');
+    expect(capabilities.responses).toHaveProperty('401');
+    expect(capabilities.responses).toHaveProperty('429');
+    expect((capabilities.responses['429'] as Record<string, unknown>)['$ref']).toBe('#/components/responses/TooManyRequests');
   });
 });
 
@@ -880,6 +892,16 @@ describe('POST /api/shorten - TTL values', () => {
     const csrf = csrfRes.body.csrfToken as string;
     const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send({ url: 'https://example.com', ttl: '60m' });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects ttl=1w for anonymous users with 403', async () => {
+    const ip = '10.99.2.10';
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', ip);
+    const csrf = csrfRes.body.csrfToken as string;
+    const res = await agent.post('/api/shorten').set('X-CSRF-Token', csrf).set('X-Forwarded-For', ip).send({ url: 'https://example.com', ttl: '1w' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('This TTL option is not available for your account.');
   });
 });
 
@@ -1104,6 +1126,30 @@ describe('CSRF protection', () => {
     expect(res.status).toBe(403);
   });
 
+  it('accepts wildcard preview origins with valid CSRF tokens', async () => {
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', '10.99.5.31');
+    const res = await agent
+      .post('/api/shorten')
+      .set('Origin', 'https://feature-branch.leafspots.preview.nntin.xyz')
+      .set('X-CSRF-Token', csrfRes.body.csrfToken as string)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects hostile suffixes that only prefix-match the wildcard preview domain', async () => {
+    const agent = request.agent(app);
+    const csrfRes = await agent.get('/auth/csrf-token').set('X-Forwarded-For', '10.99.5.32');
+    const res = await agent
+      .post('/api/shorten')
+      .set('Origin', 'https://feature-branch.leafspots.preview.nntin.xyz.evil.test')
+      .set('X-CSRF-Token', csrfRes.body.csrfToken as string)
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(403);
+  });
+
   it('requires CSRF tokens for browser-session mutations', async () => {
     const admin = makeAdminUser();
     db.urls.push({ id: 1, short_code: 'delete-me', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
@@ -1122,6 +1168,73 @@ describe('CSRF protection', () => {
     const token = issueAccessToken(user, ['shorten:create']);
     const res = await request(app).post('/api/shorten').set('Authorization', `Bearer ${token}`).send({ url: 'https://example.com', ttl: '24h' });
     expect(res.status).toBe(201);
+  });
+});
+
+describe('CORS policy split', () => {
+  it('allows first-party origins on browser-backed auth endpoints and rejects hostile origins', async () => {
+    const user = makeRegularUser();
+    const { agent, csrfToken } = await createAuthenticatedSession(user, '10.99.5.5');
+
+    const allowed = await agent
+      .get('/auth/me')
+      .set('Origin', 'http://localhost:5173')
+      .set('X-Forwarded-For', '10.99.5.5');
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+
+    const blocked = await agent
+      .post('/auth/logout')
+      .set('Origin', 'https://evil.example')
+      .set('X-CSRF-Token', csrfToken)
+      .set('X-Forwarded-For', '10.99.5.5');
+
+    expect(blocked.status).toBe(403);
+    expect(blocked.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('allows the public API from arbitrary origins without credentials or sessions', async () => {
+    const origin = 'https://thirdparty.example';
+
+    const capabilities = await request(app)
+      .get('/api/public/shorten/capabilities')
+      .set('Origin', origin)
+      .set('X-Forwarded-For', '10.99.5.6');
+
+    expect(capabilities.status).toBe(200);
+    expect(capabilities.headers['access-control-allow-origin']).toBe(origin);
+    expect(capabilities.headers['access-control-allow-credentials']).toBeUndefined();
+
+    const res = await request(app)
+      .post('/api/public/shorten')
+      .set('Origin', origin)
+      .set('X-Forwarded-For', '10.99.5.6')
+      .send({ url: 'https://example.com', ttl: '24h' });
+
+    expect(res.status).toBe(201);
+    expect(res.headers['access-control-allow-origin']).toBe(origin);
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('does not add CORS behavior to redirect and auth navigation endpoints', async () => {
+    db.urls.push({ id: 1, short_code: 'cors-test', original_url: 'https://example.com', expires_at: null, is_custom: false, user_id: null, created_at: new Date() });
+
+    const short = await request(app)
+      .get('/s/cors-test')
+      .redirects(0)
+      .set('Origin', 'https://evil.example');
+
+    expect(short.status).toBe(302);
+    expect(short.headers['access-control-allow-origin']).toBeUndefined();
+
+    const auth = await request(app)
+      .get('/auth/github')
+      .set('Origin', 'https://evil.example');
+
+    expect(auth.headers['access-control-allow-origin']).toBeUndefined();
   });
 });
 
@@ -1154,6 +1267,8 @@ describe('GET /api/openapi.json', () => {
     const paths: string[] = Object.keys(res.body.paths as Record<string, unknown>);
     expect(paths).toContain('/auth/me');
     expect(paths).toContain('/api/shorten');
+    expect(paths).toContain('/api/public/shorten');
+    expect(paths).toContain('/api/public/shorten/capabilities');
     expect(paths).toContain('/api/urls');
     expect(paths).toContain('/admin/users');
     expect(paths).toContain('/admin/urls/{id}');
@@ -1225,6 +1340,94 @@ describe('OAuth returnTo validation', () => {
   it('normalizes relative returnTo paths to the backend origin', () => {
     const resolved = validateOAuthReturnTo('/oauth/authorize?response_type=code');
     expect(resolved).toBe('https://leaflet.lair.nntin.xyz/oauth/authorize?response_type=code');
+  });
+
+  it('allows Pages returnTo URLs under /leafspots', () => {
+    const resolved = validateOAuthReturnTo('https://nntin.xyz/leafspots/');
+    expect(resolved).toBe('https://nntin.xyz/leafspots/');
+  });
+
+  it('allows preview returnTo URLs on the wildcard preview domain', () => {
+    const resolved = validateOAuthReturnTo('https://feature-branch.leafspots.preview.nntin.xyz/share/abc');
+    expect(resolved).toBe('https://feature-branch.leafspots.preview.nntin.xyz/share/abc');
+  });
+
+  it('rejects unrelated Pages returnTo paths', () => {
+    expect(validateOAuthReturnTo('https://nntin.xyz/not-leafspots/')).toBeNull();
+  });
+});
+
+describe('GET /api/shorten/capabilities', () => {
+  it('returns anonymous shorten options and auth-read rate-limit headers', async () => {
+    const res = await request(app).get('/api/shorten/capabilities').set('X-Forwarded-For', '10.99.1.40');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      authenticated: false,
+      anonymous: true,
+      role: null,
+      shortenAllowed: true,
+      aliasingAllowed: false,
+      neverAllowed: false,
+      ttlOptions: [
+        { value: '5m', label: '5 minutes' },
+        { value: '1h', label: '1 hour' },
+        { value: '24h', label: '24 hours' },
+      ],
+    });
+
+    expect(res.headers['ratelimit']).toBeDefined();
+    expect(res.headers['ratelimit-policy']).toContain('auth-read-anonymous');
+    expect(res.headers['ratelimit-policy']).not.toContain('shorten-anonymous');
+  });
+
+  it('returns role-based options for an authenticated browser session', async () => {
+    const user = makePrivilegedUser();
+    const { agent } = await createAuthenticatedSession(user, '10.99.1.41');
+
+    const res = await agent.get('/api/shorten/capabilities').set('X-Forwarded-For', '10.99.1.41');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      authenticated: true,
+      anonymous: false,
+      role: 'privileged',
+      shortenAllowed: true,
+      aliasingAllowed: true,
+      neverAllowed: false,
+      ttlOptions: [
+        { value: '5m', label: '5 minutes' },
+        { value: '1h', label: '1 hour' },
+        { value: '24h', label: '24 hours' },
+        { value: '1w', label: '1 week' },
+      ],
+    });
+  });
+
+  it('returns scope-aware options for OAuth callers', async () => {
+    const admin = makeAdminUser();
+    const token = issueAccessToken(admin, ['shorten:create']);
+
+    const res = await request(app)
+      .get('/api/shorten/capabilities')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Forwarded-For', '10.99.1.42');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      authenticated: true,
+      anonymous: false,
+      role: 'admin',
+      shortenAllowed: true,
+      aliasingAllowed: false,
+      neverAllowed: false,
+      ttlOptions: [
+        { value: '5m', label: '5 minutes' },
+        { value: '1h', label: '1 hour' },
+        { value: '24h', label: '24 hours' },
+        { value: '1w', label: '1 week' },
+      ],
+    });
   });
 });
 

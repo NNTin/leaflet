@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
-import cors, { CorsOptions } from 'cors';
+import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
 import passport from 'passport';
@@ -20,18 +20,38 @@ import {
   oauthTokenLimiter,
   oauthAppsLimiter,
   oauthAuthorizeLimiter,
+  composeLimiters,
+  createRoleLimiter,
+  POLICY,
 } from './rate-limit';
 
 import './passport';
 
 import authRoutes from './routes/auth';
-import urlRoutes, { redirectShortCode, humanRedirectShortCode } from './routes/urls';
+import urlRoutes, {
+  redirectShortCode,
+  humanRedirectShortCode,
+  shortenValidators,
+  createShortenHandler,
+  createShortenCapabilitiesHandler,
+} from './routes/urls';
 import adminRoutes from './routes/admin';
 import oauthRoutes from './routes/oauth';
 import mergeRoutes from './routes/merge';
 import { isAllowedFrontendOrigin, publicApiOrigin } from './config';
+import { optionalBearerAuth } from './middleware/auth';
 
 const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const firstPartyCors = cors({
+  origin(origin, callback) {
+    callback(null, !origin || isAllowedFrontendOrigin(origin));
+  },
+  credentials: true,
+});
+const publicCors = cors({
+  origin: true,
+  credentials: false,
+});
 
 /**
  * OAuth machine-to-machine endpoints that must be exempt from CSRF.
@@ -53,14 +73,19 @@ app.use(helmet({
   },
 }));
 
-const corsOptions: CorsOptions = {
-  origin(origin, callback) {
-    callback(null, !origin || isAllowedFrontendOrigin(origin));
-  },
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
+[
+  '/auth/csrf-token',
+  '/auth/me',
+  '/auth/providers',
+  '/auth/identities',
+  '/auth/logout',
+  '/auth/merge',
+  '/api/shorten',
+  '/api/urls',
+  '/api/openapi.json',
+  '/admin',
+].forEach((path) => app.use(path, firstPartyCors));
+app.use('/api/public', publicCors);
 
 app.use(express.json());
 // Required for OAuth /token, /revoke endpoints (form-encoded bodies)
@@ -160,6 +185,8 @@ app.get('/auth/csrf-token', csrfBootstrapLimiter, (req: Request, res: Response) 
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (CSRF_SAFE_METHODS.has(req.method)) return next();
 
+  if (req.path.startsWith('/api/public/')) return next();
+
   // OAuth token requests are not cookie-based so CSRF does not apply.
   if (req.oauthAuthenticated) return next();
 
@@ -233,9 +260,62 @@ const swaggerDocument = {
 
 // Per-route rate limiters (applied before routers, method-specific where needed).
 
-// GET /auth/me, GET /auth/providers
+// GET /auth/me, GET /auth/providers, GET /api/shorten/capabilities
 app.get('/auth/me', authReadLimiter);
 app.get('/auth/providers', authReadLimiter);
+app.get('/api/shorten/capabilities', authReadLimiter);
+
+function getOAuthUser(req: Request): User | null {
+  return req.oauthAuthenticated === true ? (req.user as User | undefined) ?? null : null;
+}
+
+function getOAuthUserId(req: Request): string {
+  const user = getOAuthUser(req);
+  return user ? String(user.id) : (req.ip ?? '0.0.0.0');
+}
+
+function getOAuthUserRole(req: Request): User['role'] | null {
+  return getOAuthUser(req)?.role ?? null;
+}
+
+const publicAuthReadLimiter = composeLimiters(
+  createRoleLimiter(
+    POLICY.AUTH_READ_ANONYMOUS,
+    (req) => req.ip ?? '0.0.0.0',
+    (req) => req.oauthAuthenticated === true,
+  ),
+  createRoleLimiter(
+    POLICY.AUTH_READ_USER,
+    getOAuthUserId,
+    (req) => req.oauthAuthenticated !== true || getOAuthUserRole(req) !== 'user',
+  ),
+  createRoleLimiter(
+    POLICY.AUTH_READ_PRIVILEGED,
+    getOAuthUserId,
+    (req) => req.oauthAuthenticated !== true || getOAuthUserRole(req) !== 'privileged',
+  ),
+);
+
+const publicShortenLimiter = composeLimiters(
+  createRoleLimiter(
+    POLICY.SHORTEN_ANONYMOUS_IP,
+    (req) => req.ip ?? '0.0.0.0',
+    (req) => req.oauthAuthenticated === true,
+  ),
+  createRoleLimiter(
+    POLICY.SHORTEN_USER,
+    getOAuthUserId,
+    (req) => req.oauthAuthenticated !== true || getOAuthUserRole(req) !== 'user',
+  ),
+  createRoleLimiter(
+    POLICY.SHORTEN_PRIVILEGED,
+    getOAuthUserId,
+    (req) => req.oauthAuthenticated !== true || getOAuthUserRole(req) !== 'privileged',
+  ),
+);
+
+const publicShortenCapabilitiesHandler = createShortenCapabilitiesHandler('public');
+const publicShortenHandler = createShortenHandler('public');
 
 // GET /auth/:provider, GET /auth/:provider/callback, POST /auth/apple/callback
 // authFlowLimiter's skip function handles the exclusion of fixed paths (me, providers,
@@ -257,6 +337,8 @@ app.post('/auth/merge/confirm', accountLimiter);
 
 // POST /api/shorten
 app.post('/api/shorten', shortenLimiter);
+app.get('/api/public/shorten/capabilities', publicAuthReadLimiter, optionalBearerAuth, publicShortenCapabilitiesHandler);
+app.post('/api/public/shorten', publicShortenLimiter, optionalBearerAuth, ...shortenValidators, publicShortenHandler);
 
 // GET /api/openapi.json
 app.get('/api/openapi.json', openapiLimiter, (req: Request, res: Response) => res.json(swaggerDocument));

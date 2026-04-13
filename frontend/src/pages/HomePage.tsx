@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { FaGithub } from 'react-icons/fa'
@@ -12,13 +12,11 @@ interface TtlOption {
   value: string;
 }
 
-const TTL_OPTIONS: TtlOption[] = [
-  { label: '5 minutes', value: '5m' },
-  { label: '1 hour', value: '1h' },
-  { label: '24 hours', value: '24h' },
-]
-
-const ADMIN_TTL: TtlOption = { label: 'Never expire', value: 'never' }
+interface ShortenCapabilities {
+  ttlOptions: TtlOption[];
+  aliasingAllowed: boolean;
+  shortenAllowed: boolean;
+}
 
 interface ShortenResponse {
   shortCode: string;
@@ -28,22 +26,37 @@ interface ShortenResponse {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { user } = useSession()
+  const { user, loading: sessionLoading } = useSession()
   const [url, setUrl] = useState('')
   const [ttl, setTtl] = useState('24h')
   const [alias, setAlias] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [rateLimitDeadline, setRateLimitDeadline] = useState<number | null>(null)
+  const [capabilities, setCapabilities] = useState<ShortenCapabilities | null>(null)
 
   const countdown = useCountdown(rateLimitDeadline)
   const isRateLimited = rateLimitDeadline !== null && !countdown.isExpired
 
-  const ttlOptions = user?.role === 'admin'
-    ? [...TTL_OPTIONS, ADMIN_TTL]
-    : TTL_OPTIONS
+  useEffect(() => {
+    if (sessionLoading) return
 
-  const canAlias = user?.role === 'admin' || user?.role === 'privileged'
+    api.get<ShortenCapabilities>('/shorten/capabilities')
+      .then(res => {
+        setCapabilities(res.data)
+        setTtl(prev => {
+          const options = res.data.ttlOptions
+          if (options.find(o => o.value === prev)) return prev
+          return options[0]?.value ?? '24h'
+        })
+      })
+      .catch(() => {
+        // keep capabilities null; form remains functional with no TTL options shown
+      })
+  }, [sessionLoading, user?.role])
+
+  const ttlOptions = capabilities?.ttlOptions ?? []
+  const canAlias = capabilities?.aliasingAllowed ?? false
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -125,23 +138,25 @@ export default function HomePage() {
             />
           </div>
 
-          <div className={styles.ttlRow}>
-            <span className={styles.ttlLabel}>Link expires after:</span>
-            <div className={styles.ttlOptions}>
-              {ttlOptions.map(opt => (
-                <label key={opt.value} className={styles.ttlOption}>
-                  <input
-                    type="radio"
-                    name="ttl"
-                    value={opt.value}
-                    checked={ttl === opt.value}
-                    onChange={() => setTtl(opt.value)}
-                  />
-                  <span className={styles.ttlText}>{opt.label}</span>
-                </label>
-              ))}
+          {ttlOptions.length > 0 && (
+            <div className={styles.ttlRow}>
+              <span className={styles.ttlLabel}>Link expires after:</span>
+              <div className={styles.ttlOptions}>
+                {ttlOptions.map(opt => (
+                  <label key={opt.value} className={styles.ttlOption}>
+                    <input
+                      type="radio"
+                      name="ttl"
+                      value={opt.value}
+                      checked={ttl === opt.value}
+                      onChange={() => setTtl(opt.value)}
+                    />
+                    <span className={styles.ttlText}>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {canAlias && (
             <div className={styles.field}>

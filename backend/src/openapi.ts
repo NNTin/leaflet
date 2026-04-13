@@ -6,6 +6,8 @@
  * The spec is imported directly at runtime and also written to dist/openapi.json during build.
  */
 
+import { SHORTEN_TTL_VALUES } from './shorten-policy';
+
 /** Minimal OpenAPI 3.0.x document shape for compile-time safety. */
 export interface OpenApiDocument {
   openapi: string;
@@ -24,6 +26,8 @@ export interface OpenApiDocument {
   };
   paths: Record<string, Record<string, unknown>>;
 }
+
+const shortenTtlEnum = [...SHORTEN_TTL_VALUES];
 
 const spec: OpenApiDocument = {
   "openapi": "3.0.3",
@@ -147,6 +151,67 @@ const spec: OpenApiDocument = {
             "nullable": true
           }
         }
+      },
+      "ShortenTtlOption": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": shortenTtlEnum
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ]
+      },
+      "ShortenCapabilities": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "anonymous": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "privileged",
+              "admin"
+            ],
+            "nullable": true
+          },
+          "shortenAllowed": {
+            "type": "boolean",
+            "description": "Whether the current caller can create short links with its current session or token scopes."
+          },
+          "aliasingAllowed": {
+            "type": "boolean"
+          },
+          "neverAllowed": {
+            "type": "boolean"
+          },
+          "ttlOptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShortenTtlOption"
+            }
+          }
+        },
+        "required": [
+          "authenticated",
+          "anonymous",
+          "role",
+          "shortenAllowed",
+          "aliasingAllowed",
+          "neverAllowed",
+          "ttlOptions"
+        ]
       },
       "Error": {
         "type": "object",
@@ -386,6 +451,7 @@ const spec: OpenApiDocument = {
     "/auth/{provider}": {
       "get": {
         "summary": "Initiate OAuth login for a provider",
+        "description": "Starts the provider login flow and stores a validated `returnTo` target in the current browser session. On the `https://nntin.xyz` Pages origin, Leaflet only accepts `returnTo` URLs under `/leaflet/...` and `/leafspots/...`. If `returnTo` is omitted or invalid, the backend falls back to the configured default frontend URL.",
         "tags": [
           "Auth"
         ],
@@ -412,7 +478,7 @@ const spec: OpenApiDocument = {
             "schema": {
               "type": "string"
             },
-            "description": "URL to redirect to after successful authentication"
+            "description": "Frontend URL to redirect to after the auth callback completes. The backend validates this against the configured frontend origins and allowed path prefixes."
           }
         ],
         "responses": {
@@ -547,7 +613,7 @@ const spec: OpenApiDocument = {
     "/auth/{provider}/callback": {
       "get": {
         "summary": "OAuth callback route for provider authentication",
-        "description": "Handles callback redirects for GET-based providers. `GET /auth/apple/callback`\nis rejected with `405 Method Not Allowed` because Apple Sign In uses\n`POST /auth/apple/callback` with `form_post` response mode.\n",
+        "description": "Handles callback redirects for GET-based providers. On success, Leaflet redirects the browser to the stored `returnTo` URL. If provider authentication fails, Leaflet redirects to that same URL with `auth=failed` added to the query string. `GET /auth/apple/callback` is rejected with `405 Method Not Allowed` because Apple Sign In uses `POST /auth/apple/callback` with `form_post` response mode.",
         "tags": [
           "Auth"
         ],
@@ -645,6 +711,7 @@ const spec: OpenApiDocument = {
     "/auth/apple/callback": {
       "post": {
         "summary": "Apple OAuth callback (form_post response mode)",
+        "description": "Handles the Apple Sign In callback. On success, Leaflet redirects the browser to the stored `returnTo` URL. If provider authentication fails, Leaflet redirects to that same URL with `auth=failed` added to the query string.",
         "tags": [
           "Auth"
         ],
@@ -1882,6 +1949,122 @@ const spec: OpenApiDocument = {
         }
       }
     },
+    "/api/shorten/capabilities": {
+      "get": {
+        "summary": "Discover shorten capabilities for the current caller",
+        "description": "Returns the currently available shorten options for the caller's browser session or OAuth token. Leafspots can use this to discover valid TTL values, labels, and whether aliasing or never-expiring links are currently allowed.",
+        "tags": [
+          "URLs"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Capabilities available to the current caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortenCapabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Bearer token is invalid or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+
+        }
+      }
+    },
+    "/api/public/shorten/capabilities": {
+      "get": {
+        "summary": "Discover public shorten capabilities",
+        "description": "Returns the currently available shorten options for the public cross-origin browser API. This endpoint does not rely on browser sessions and only uses OAuth bearer auth when a bearer token is explicitly provided.",
+        "tags": [
+          "URLs"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Capabilities available to the current caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortenCapabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Bearer token is invalid or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+
+        }
+      }
+    },
     "/api/shorten": {
       "post": {
         "summary": "Create a short URL",
@@ -1914,12 +2097,7 @@ const spec: OpenApiDocument = {
                   },
                   "ttl": {
                     "type": "string",
-                    "enum": [
-                      "5m",
-                      "1h",
-                      "24h",
-                      "never"
-                    ],
+                    "enum": shortenTtlEnum,
                     "description": "Time-to-live. \"never\" is admin only."
                   },
                   "alias": {
@@ -1975,6 +2153,161 @@ const spec: OpenApiDocument = {
               }
             },
             "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Forbidden - insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Alias already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/public/shorten": {
+      "post": {
+        "summary": "Create a short URL from a public browser origin",
+        "description": "Cross-origin shortening endpoint for third-party sites. This route does not use browser sessions or CSRF tokens; OAuth bearer tokens are optional.",
+        "tags": [
+          "URLs"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url",
+                  "ttl"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "The URL to shorten"
+                  },
+                  "ttl": {
+                    "type": "string",
+                    "enum": shortenTtlEnum,
+                    "description": "Time-to-live. \"never\" is admin only."
+                  },
+                  "alias": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 50,
+                    "description": "Custom short code alias. Privileged/admin only."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Short URL created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shortCode": {
+                      "type": "string"
+                    },
+                    "shortUrl": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "description": "Bearer token is invalid or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -2578,4 +2911,3 @@ const spec: OpenApiDocument = {
 };
 
 export default spec;
-
