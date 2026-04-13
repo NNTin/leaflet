@@ -10,6 +10,7 @@ const ExpiredPage = lazy(() => import('./pages/ExpiredPage'))
 const ErrorPage = lazy(() => import('./pages/ErrorPage'))
 const RedirectPage = lazy(() => import('./pages/RedirectPage'))
 const DeveloperPage = lazy(() => import('./pages/DeveloperPage'))
+const CliPage = lazy(() => import('./pages/CliPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/error" element={<ErrorPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/developer" element={<DeveloperPage />} />
+          <Route path="/cli" element={<CliPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<ErrorPage statusCode={404} message="Page not found" />} />
