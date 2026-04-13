@@ -704,7 +704,7 @@ describe('OpenAPI TTL enum contract', () => {
         requestBody: { content: { 'application/json': { schema: { properties: { ttl: { enum: string[] } } } } } };
       }
     ).requestBody.content['application/json'].schema.properties.ttl.enum;
-    expect(ttlEnum.sort()).toEqual(['24h', '1h', '5m', 'never'].sort());
+    expect(ttlEnum.sort()).toEqual(['24h', '1h', '1w', '5m', 'never'].sort());
   });
 
   it('does not contain deprecated 60m value', () => {
@@ -1389,6 +1389,7 @@ describe('GET /api/shorten/capabilities', () => {
         { value: '5m', label: '5 minutes' },
         { value: '1h', label: '1 hour' },
         { value: '24h', label: '24 hours' },
+        { value: '1w', label: '1 week' },
       ],
     });
   });
@@ -1414,6 +1415,7 @@ describe('GET /api/shorten/capabilities', () => {
         { value: '5m', label: '5 minutes' },
         { value: '1h', label: '1 hour' },
         { value: '24h', label: '24 hours' },
+        { value: '1w', label: '1 week' },
       ],
     });
   });
