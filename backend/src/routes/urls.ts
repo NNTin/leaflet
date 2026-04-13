@@ -58,7 +58,7 @@ function buildShortenCapabilities(req: Request, mode: ShortenAuthMode) {
 }
 
 export const shortenValidators = [
-  body('url').isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('A valid HTTP/HTTPS URL is required'),
+  body('url').isURL({ protocols: ['http', 'https'], require_protocol: true, max_allowed_length: 8192 }).withMessage('A valid HTTP/HTTPS URL is required'),
   body('ttl').isIn(SHORTEN_TTL_VALUES).withMessage(`TTL must be one of: ${SHORTEN_TTL_VALUES.join(', ')}`),
   body('alias')
     .optional()

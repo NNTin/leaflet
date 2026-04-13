@@ -206,12 +206,12 @@ npm link`}</code></pre>
         <div className={styles.codeGroup} style={{ marginTop: '1.25rem' }}>
           <div className={styles.codeBlock}>
             <div className={styles.codeLabel}>Example — shorten a URL and capture the output</div>
-            <pre><code>{`leaflet-cli shorten "https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication" --json`}</code></pre>
+            <pre><code>{`leaflet-cli shorten "https://nntin.xyz/leafspots/#state=v2:TVDJbcQwEGtoDMx91GK4g0V-6T-UpQD7MjHmJd4hbtlDYjxRTEU_v58P3beR0B1alTJU4yZKmU5MVxnbC8TClISngVkqFx66zKaIn4f-XdQLnOpuacrCdfHEPKjrTXcnUe7Y0G0OqhwmzYb1-1tZbB9xlumvkEqFVbtEGF3qmSiBYsrBp6SzwvftiPM4mU7SlZyvW4FReO6GmpCsDBAqltX6LKOvUKuAtjtjScZ5FYMhKuxILGcnJgzBG5pVnSLOsXqeiokRv5fDdiPwx5MD-_fiQbx7HQ0OuX01S5Yc-uf5Aw" --json`}</code></pre>
           </div>
           <div className={styles.codeBlock}>
             <div className={styles.codeLabel}>Output</div>
             <pre><code>{`{
-  "shortUrl": "https://your-leaflet-instance/s/abc123",
+  "shortUrl": "https://leaflet.lair.nntin.xyz/s/my-custom-link",
   "expiresAt": "2026-04-14T12:00:00Z"
 }`}</code></pre>
           </div>
