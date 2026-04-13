@@ -1,27 +1,27 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useId } from 'react'
 import mermaid from 'mermaid'
 import styles from './CliPage.module.css'
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' })
-
-let diagramCounter = 0
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' })
 
 function MermaidDiagram({ chart }: { chart: string }) {
   const ref = useRef<HTMLDivElement>(null)
+  const baseId = useId().replace(/:/g, '')
 
   useEffect(() => {
     if (!ref.current) return
-    const id = `mermaid-diagram-${++diagramCounter}`
+    const id = `mermaid-diagram-${baseId}`
     ref.current.innerHTML = ''
     mermaid
       .render(id, chart)
       .then(({ svg }) => {
         if (ref.current) ref.current.innerHTML = svg
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        console.error('Mermaid render error:', err)
         if (ref.current) ref.current.textContent = chart
       })
-  }, [chart])
+  }, [chart, baseId])
 
   return <div className={styles.diagramWrap} ref={ref} />
 }
