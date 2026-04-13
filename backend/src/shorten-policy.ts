@@ -5,7 +5,7 @@ const SECONDS_PER_MINUTE = 60;
 const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 
-export type ShortenTtl = '5m' | '1h' | '24h' | 'never';
+export type ShortenTtl = '5m' | '1h' | '24h' | '1w' | 'never';
 export type ShortenRole = User['role'] | null;
 
 export interface ShortenTtlOption {
@@ -33,6 +33,7 @@ export const SHORTEN_TTL_OPTIONS: ReadonlyArray<ShortenTtlOption> = [
   { value: '5m', label: '5 minutes' },
   { value: '1h', label: '1 hour' },
   { value: '24h', label: '24 hours' },
+  { value: '1w', label: '1 week' },
   { value: 'never', label: 'Never expire' },
 ];
 
@@ -42,6 +43,7 @@ export const SHORTEN_TTL_MAP: Record<ShortenTtl, number | null> = {
   '5m': 5 * SECONDS_PER_MINUTE * MS_PER_SECOND,
   '1h': MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
   '24h': HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
+  '1w': 7 * HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND,
   'never': null,
 };
 
@@ -83,9 +85,14 @@ export function getShortenTtlOptions(context: ShortenCapabilityContext): Shorten
     return [];
   }
 
+  const weekAllowed = context.user !== null;
   const neverAllowed = canContextUseNeverTtl(context);
 
-  return SHORTEN_TTL_OPTIONS.filter(({ value }) => value !== 'never' || neverAllowed);
+  return SHORTEN_TTL_OPTIONS.filter(({ value }) => {
+    if (value === '1w') return weekAllowed;
+    if (value === 'never') return neverAllowed;
+    return true;
+  });
 }
 
 export function getShortenCapabilities(context: ShortenCapabilityContext): ShortenCapabilities {

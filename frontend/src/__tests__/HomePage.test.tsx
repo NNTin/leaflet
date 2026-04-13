@@ -8,6 +8,7 @@ import { RateLimitError } from '../rateLimit'
 
 const mocks = vi.hoisted(() => {
   const apiPost = vi.fn()
+  const apiGet = vi.fn()
   const csrfHeaders = vi.fn(() => Promise.resolve({ 'X-CSRF-Token': 'test-csrf' }))
   const axiosGet = vi.fn()
   const axiosCreate = vi.fn(() => ({
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => {
     },
   }))
 
-  return { apiPost, csrfHeaders, axiosGet, axiosCreate }
+  return { apiPost, apiGet, csrfHeaders, axiosGet, axiosCreate }
 })
 
 vi.mock('axios', () => {
@@ -38,6 +39,7 @@ vi.mock('axios', () => {
 vi.mock('../api', () => {
   return {
     default: {
+      get: mocks.apiGet,
       post: mocks.apiPost,
     },
     csrfHeaders: mocks.csrfHeaders,
@@ -68,6 +70,7 @@ describe('HomePage', () => {
     mocks.axiosGet.mockReset()
     mocks.axiosCreate.mockClear()
     mocks.apiPost.mockReset()
+    mocks.apiGet.mockReset()
     mocks.csrfHeaders.mockReset()
     mocks.csrfHeaders.mockResolvedValue({ 'X-CSRF-Token': 'test-csrf' })
 
@@ -76,6 +79,27 @@ describe('HomePage', () => {
         return Promise.resolve({ data: null })
       }
       throw new Error(`Unexpected GET: ${url}`)
+    })
+
+    mocks.apiGet.mockImplementation((url: string) => {
+      if (url === '/shorten/capabilities') {
+        return Promise.resolve({
+          data: {
+            authenticated: false,
+            anonymous: true,
+            role: null,
+            shortenAllowed: true,
+            aliasingAllowed: false,
+            neverAllowed: false,
+            ttlOptions: [
+              { value: '5m', label: '5 minutes' },
+              { value: '1h', label: '1 hour' },
+              { value: '24h', label: '24 hours' },
+            ],
+          },
+        })
+      }
+      throw new Error(`Unexpected api.get: ${url}`)
     })
   })
 
