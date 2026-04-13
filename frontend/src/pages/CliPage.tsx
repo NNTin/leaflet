@@ -118,10 +118,6 @@ npm install
 npm run build
 npm link`}</code></pre>
           </div>
-          <div className={styles.codeBlock}>
-            <div className={styles.codeLabel}>Optional — global install</div>
-            <pre><code>{`npm install -g leaflet-cli`}</code></pre>
-          </div>
         </div>
         <p className={styles.prose} style={{ marginTop: '0.75rem' }}>
           <code>npm link</code> makes your local <code>cli/</code> build available globally as
