@@ -2,7 +2,27 @@ import { useEffect, useRef, useId } from 'react'
 import mermaid from 'mermaid'
 import styles from './CliPage.module.css'
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' })
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  securityLevel: 'strict',
+  themeVariables: {
+    primaryColor: '#d7f3e2',
+    primaryTextColor: '#0f3320',
+    primaryBorderColor: '#6db38b',
+    lineColor: '#2f7d53',
+    secondaryColor: '#eaf8ef',
+    tertiaryColor: '#f4fcf7',
+    actorBkg: '#d7f3e2',
+    actorBorder: '#6db38b',
+    actorTextColor: '#0f3320',
+    signalColor: '#2f7d53',
+    signalTextColor: '#0f3320',
+    labelBoxBkgColor: '#eaf8ef',
+    labelBoxBorderColor: '#6db38b',
+    labelTextColor: '#184b2f'
+  }
+})
 
 function MermaidDiagram({ chart }: { chart: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -14,7 +34,7 @@ function MermaidDiagram({ chart }: { chart: string }) {
     ref.current.innerHTML = ''
     mermaid
       .render(id, chart)
-      .then(({ svg }) => {
+      .then(({ svg }: { svg: string }) => {
         if (ref.current) ref.current.innerHTML = svg
       })
       .catch((err: unknown) => {
@@ -92,10 +112,22 @@ npm install
 npm run build --workspace cli`}</code></pre>
           </div>
           <div className={styles.codeBlock}>
+            <div className={styles.codeLabel}>Use npm link for local development</div>
+            <pre><code>{`cd leaflet/cli
+npm install
+npm run build
+npm link`}</code></pre>
+          </div>
+          <div className={styles.codeBlock}>
             <div className={styles.codeLabel}>Optional — global install</div>
             <pre><code>{`npm install -g leaflet-cli`}</code></pre>
           </div>
         </div>
+        <p className={styles.prose} style={{ marginTop: '0.75rem' }}>
+          <code>npm link</code> makes your local <code>cli/</code> build available globally as
+          <code> leaflet-cli</code>, so AI tools and scripts can call the latest local version
+          without publishing a package.
+        </p>
       </section>
 
       {/* Section 3: Auth */}
@@ -106,7 +138,7 @@ npm run build --workspace cli`}</code></pre>
         </p>
         <div className={styles.codeBlock} style={{ marginBottom: '1rem' }}>
           <div className={styles.codeLabel}>Login</div>
-          <pre><code>{`leaflet auth login`}</code></pre>
+          <pre><code>{`leaflet-cli auth login`}</code></pre>
         </div>
         <p className={styles.prose}>
           A browser window opens for GitHub authentication. The access token is stored locally
@@ -140,19 +172,19 @@ npm run build --workspace cli`}</code></pre>
           </thead>
           <tbody>
             <tr>
-              <td><code>leaflet auth status</code></td>
+              <td><code>leaflet-cli auth status</code></td>
               <td>Check authentication status and granted scopes</td>
             </tr>
             <tr>
-              <td><code>leaflet shorten &lt;url&gt;</code></td>
+              <td><code>leaflet-cli shorten &lt;url&gt;</code></td>
               <td>Shorten a URL</td>
             </tr>
             <tr>
-              <td><code>leaflet shorten &lt;url&gt; --json</code></td>
+              <td><code>leaflet-cli shorten &lt;url&gt; --json</code></td>
               <td>JSON output for AI agents and automation pipelines</td>
             </tr>
             <tr>
-              <td><code>leaflet shorten &lt;url&gt; --ttl 24h</code></td>
+              <td><code>leaflet-cli shorten &lt;url&gt; --ttl 24h</code></td>
               <td>Set a custom expiry (e.g. 24 hours)</td>
             </tr>
           </tbody>
@@ -174,7 +206,7 @@ npm run build --workspace cli`}</code></pre>
         <div className={styles.codeGroup} style={{ marginTop: '1.25rem' }}>
           <div className={styles.codeBlock}>
             <div className={styles.codeLabel}>Example — shorten a URL and capture the output</div>
-            <pre><code>{`leaflet shorten "https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication" --json`}</code></pre>
+            <pre><code>{`leaflet-cli shorten "https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication" --json`}</code></pre>
           </div>
           <div className={styles.codeBlock}>
             <div className={styles.codeLabel}>Output</div>

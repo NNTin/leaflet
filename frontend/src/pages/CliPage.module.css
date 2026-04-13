@@ -101,6 +101,55 @@
   height: auto;
 }
 
+.diagramWrap :global(.node rect),
+.diagramWrap :global(.node polygon),
+.diagramWrap :global(.node circle),
+.diagramWrap :global(.node ellipse) {
+  fill: #eaf8ef;
+  stroke: #4c9a6a;
+  stroke-width: 1.5px;
+}
+
+.diagramWrap :global(.node .label),
+.diagramWrap :global(.nodeLabel),
+.diagramWrap :global(.actor),
+.diagramWrap :global(.actor-line) {
+  color: #103724;
+  fill: #103724;
+  stroke: #4c9a6a;
+}
+
+.diagramWrap :global(.edgePath .path),
+.diagramWrap :global(.flowchart-link),
+.diagramWrap :global(.messageLine0),
+.diagramWrap :global(.messageLine1),
+.diagramWrap :global(.sequenceNumber) {
+  stroke: #2f7d53;
+  color: #2f7d53;
+}
+
+.diagramWrap :global(.arrowheadPath),
+.diagramWrap :global(.arrowhead) {
+  fill: #2f7d53;
+  stroke: #2f7d53;
+}
+
+.diagramWrap :global(.labelBox),
+.diagramWrap :global(.label-container),
+.diagramWrap :global(.activation0),
+.diagramWrap :global(.activation1),
+.diagramWrap :global(.activation2) {
+  fill: #d7f3e2;
+  stroke: #6db38b;
+}
+
+.diagramWrap :global(.loopText),
+.diagramWrap :global(.messageText),
+.diagramWrap :global(.labelText),
+.diagramWrap :global(text) {
+  fill: #103724;
+}
+
 /* Code blocks */
 .codeGroup {
   display: flex;
