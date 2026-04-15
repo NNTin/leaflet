@@ -1,0 +1,1 @@
+import{u as r,a as s,r as t,s as o,j as n,L as i}from"./index-CRjLCfHc.js";function c(){const{code:e}=r(),a=s();return t.useEffect(()=>{if(!e){a("/expired");return}window.location.replace(o(e))},[e,a]),n.jsx(i,{fullPage:!0})}export{c as default};
