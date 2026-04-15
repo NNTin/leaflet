@@ -9,6 +9,7 @@ networks:
 services:
   postgres:
     image: postgres:15-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: leaflet
       POSTGRES_PASSWORD: ${LEAFLET_POSTGRES_PASSWORD:?LEAFLET_POSTGRES_PASSWORD is required}
